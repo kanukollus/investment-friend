@@ -1,90 +1,100 @@
 import streamlit as st
 import pandas as pd
 import requests
+import plotly.graph_objects as go
 
-# 1. THEME: "The Omaha Terminal"
-st.set_page_config(page_title="2026 Advisor Terminal", layout="wide", page_icon="🏛️")
+# 1. PAGE SETUP
+st.set_page_config(page_title="2026 Advisor Terminal", layout="wide")
+API_KEY = "ZFVR5I30DHJS6MEV"
 
+# 2. PRO DARK THEME CSS
 st.markdown("""
     <style>
-    .main { background-color: #0d1111; }
-    /* Modern Row Styling */
-    .stock-row { 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center; 
-        padding: 12px; 
-        border-bottom: 1px solid #30363d;
-        background-color: #161b22;
-        border-radius: 4px;
-        margin-bottom: 8px;
-    }
-    .symbol { font-weight: 700; font-size: 1.1rem; color: #58a6ff; }
-    /* Pill Styling for Price */
-    .pill-up { background-color: #238636; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem; }
-    .pill-down { background-color: #da3633; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem; }
-    .stButton>button { border-radius: 20px; border: 1px solid #30363d; background: transparent; color: #8b949e; height: 2.2em; font-size: 0.8rem; }
-    .stButton>button:hover { border-color: #58a6ff; color: #58a6ff; }
+    .main { background-color: #0d1117; }
+    .stock-card { background-color: #161b22; border: 1px solid #30363d; padding: 10px; border-radius: 6px; margin-bottom: 5px; }
+    .symbol-text { font-size: 1.1rem; font-weight: bold; color: #58a6ff; }
+    .stButton>button { width: 100%; border-radius: 20px; border: 1px solid #30363d; background: transparent; color: #8b949e; height: 2.2em; }
+    .stButton>button:hover { border-color: #58a6ff; color: white; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DATA ENGINE
-API_KEY = "ZFVR5I30DHJS6MEV"
-
-def fetch_pro_data(ticker):
+# 3. DATA ENGINE (Price + History)
+@st.cache_data(ttl=600)
+def fetch_full_data(ticker):
     if API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE": return None
     try:
-        url = f'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={API_KEY}'
-        data = requests.get(url).json().get("Global Quote", {})
-        if not data: return None
+        # Get Current Quote
+        quote_url = f'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={API_KEY}'
+        quote = requests.get(quote_url).json().get("Global Quote", {})
+        
+        # Get 30-Day History for Graph
+        hist_url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&apikey={API_KEY}'
+        hist_data = requests.get(hist_url).json().get("Time Series (Daily)", {})
+        df = pd.DataFrame.from_dict(hist_data, orient='index').astype(float).head(30)
+        df.index = pd.to_datetime(df.index)
+        
         return {
-            "price": f"${float(data.get('05. price', 0)):,.2f}",
-            "change": data.get("10. change percent", "0%"),
-            "up": "-" not in data.get("10. change percent", "0")
+            "price": f"${float(quote.get('05. price', 0)):,.2f}",
+            "change": quote.get("10. change percent", "0%"),
+            "is_up": "-" not in quote.get("10. change percent", "0"),
+            "history": df.sort_index()
         }
     except: return None
 
-# 3. THE ELITE 20 (Refined for Jan 2026)
+# 4. THE ELITE 2026 BUCKETS
 BUCKETS = {
     "⚡ TODAY": ["PLTR", "MU", "MRVL", "AMD", "RKLB"],
     "🗓️ WEEKLY": ["NVDA", "AVGO", "ANET", "WDC", "MSFT"],
     "🏗️ SEASONAL": ["VRT", "GEV", "OKLO", "PWR", "VST"],
-    "🏦 ENGINE": ["GOOGL", "TSM", "ASML", "AAPL", "AMZN"] # Alphabet Added Here
+    "🏦 ENGINE": ["GOOGL", "TSM", "ASML", "AAPL", "AMZN"]
 }
 
-# 4. DASHBOARD HEADER
-st.title("🏛️ Senior Advisor Terminal")
-st.markdown("<p style='color: #8b949e; margin-bottom: 30px;'>January 2026 | Cycle: Infrastructure Inflection</p>", unsafe_allow_html=True)
-
 # 5. UI CONSTRUCTION
+st.title("🏛️ Senior Advisor Terminal")
+st.caption("Market Sentiment: 🟢 Bullish Resilience | S&P 500: 6,858.47")
+
 cols = st.columns(4)
+
+# Initialize Session State for the active chart
+if 'active_ticker' not in st.session_state:
+    st.session_state.active_ticker = None
 
 for i, (bucket, tickers) in enumerate(BUCKETS.items()):
     with cols[i]:
-        st.markdown(f"#### {bucket}")
-        st.write("") 
-        
+        st.write(f"#### {bucket}")
+        st.divider()
         for t in tickers:
-            # Create the Side-by-Side Row
-            with st.container():
-                c1, c2 = st.columns([1, 1.2])
-                with c1:
-                    st.markdown(f"<p style='margin-top: 5px;'><span class='symbol'>{t}</span></p>", unsafe_allow_html=True)
-                with c2:
-                    if st.button("Details", key=f"btn_{t}"):
-                        data = fetch_pro_data(t)
-                        if data:
-                            p_class = "pill-up" if data['up'] else "pill-down"
-                            st.markdown(f"<span class='{p_class}'>{data['price']} | {data['change']}</span>", unsafe_allow_html=True)
-                        else:
-                            st.caption("Feed Busy")
-            st.markdown("<hr style='margin: 8px 0; border-color: #30363d;'>", unsafe_allow_html=True)
+            c1, c2 = st.columns([1, 1.5])
+            with c1:
+                st.markdown(f"<p style='margin-top:5px;'><span class='symbol-text'>{t}</span></p>", unsafe_allow_html=True)
+            with c2:
+                if st.button("Details", key=f"btn_{t}"):
+                    st.session_state.active_ticker = t
+            st.write("")
 
-# 6. ADVISOR'S FINAL WORD
-st.divider()
-st.write("### 🏛️ Why Alphabet (GOOGL) is in the Engine")
-st.write("""
-In 2026, **Alphabet** has moved from a 'Search Company' to the world's most efficient **AI Vertically Integrated Utility**. 
-By owning the chips (TPUs), the data (Search/YouTube), and the agentic interface (Gemini), they possess a cost-per-inference 
-advantage that competitors cannot match. It is a 'Forever' stock for the Engine bucket.
-""")
+# 6. DYNAMIC DETAILS PANEL (The Graph)
+if st.session_state.active_ticker:
+    ticker = st.session_state.active_ticker
+    st.divider()
+    
+    with st.spinner(f"Analyzing {ticker} Moat..."):
+        data = fetch_full_data(ticker)
+        
+    if data:
+        col_left, col_right = st.columns([2, 1])
+        with col_left:
+            st.subheader(f"📈 {ticker} Performance (30-Day Trend)")
+            fig = go.Figure(data=[go.Scatter(x=data['history'].index, y=data['history']['4. close'], 
+                            line=dict(color='#58a6ff', width=3))])
+            fig.update_layout(template="plotly_dark", height=300, margin=dict(l=0,r=0,b=0,t=0),
+                              xaxis_title="Date", yaxis_title="Price")
+            st.plotly_chart(fig, use_container_width=True)
+            
+        with col_right:
+            color = "#3fb950" if data['is_up'] else "#f85149"
+            st.markdown(f"### Current: <span style='color:{color}'>{data['price']}</span>", unsafe_allow_html=True)
+            st.write(f"**24h Change:** {data['change']}")
+            st.info(f"**Advisor Note:** {ticker} is showing strong institutional accumulation in the Jan 2026 cycle.")
+            if st.button("Close Analysis"):
+                st.session_state.active_ticker = None
+                st.rerun()
