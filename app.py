@@ -1,90 +1,97 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
-import requests
 import time
 
-# 1. AUTH & CONFIG
-st.set_page_config(page_title="2026 Sovereign Terminal", layout="wide")
-API_KEY = "YOUR_ALPHA_VANTAGE_KEY_HERE" 
+# 1. Terminal Configuration
+st.set_page_config(page_title="Buffett Dynamic Scraper", layout="wide")
 
-# 2. THE DYNAMIC DATA ENGINE
-@st.cache_data(ttl=300) # Data stays fresh for 5 mins
-def get_live_quote(ticker):
-    if API_KEY == "ZFVR5I30DHJS6MEV":
-        return {"p": "Demo", "c": "0%"}
-    
-    url = f'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={API_KEY}'
-    try:
-        # We add a tiny delay to ensure we don't burst the API
-        time.sleep(0.2)
-        r = requests.get(url, timeout=5)
-        data = r.json().get("Global Quote", {})
-        if not data: return {"p": "Busy", "c": "0%"}
-        return {
-            "p": f"${float(data.get('05. price', 0)):,.2f}",
-            "c": data.get("10. change percent", "0%")
-        }
-    except:
-        return {"p": "Error", "c": "0%"}
-
-# 3. SESSION STATE (The App's Memory)
-if 'active_scalp' not in st.session_state:
-    st.session_state.active_scalp = "PLTR"
-
-# 4. CUSTOM UI STYLING
 st.markdown("""
     <style>
-    [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; padding: 20px; border-radius: 12px; }
-    .stButton>button { width: 100%; border-radius: 6px; background-color: #21262d; border: 1px solid #30363d; color: #58a6ff; }
-    .stButton>button:hover { border-color: #58a6ff; color: white; }
+    .main { background-color: #0d1117; }
+    [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #d4af37; padding: 20px; border-radius: 12px; }
+    .advisor-brief { border-left: 5px solid #238636; background-color: #1c1c1c; padding: 15px; margin-bottom: 25px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 5. DASHBOARD HEADER
-st.title("🏛️ Sovereign Advisor Terminal")
-st.markdown("<p style='color: #8b949e;'>Real-Time Market Intelligence | Jan 3, 2026</p>", unsafe_allow_html=True)
+# 2. THE DYNAMIC SCRAPER (No Hardcoding)
+@st.cache_data(ttl=86400) # Only scrape once a day
+def get_sp500_tickers():
+    # Dynamically pull S&P 500 constituents from Wikipedia
+    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    tables = pd.read_html(url)
+    df = tables[0]
+    return df['Symbol'].tolist()
 
-# 6. TODAY'S SCALPS (Horizontal Row with Lazy Loading)
-st.write("### ⚡ Today's Focus (Click to Unlock)")
-tickers = ["PLTR", "MU", "MRVL", "AMD", "RKLB"]
-cols = st.columns(5)
+@st.cache_data(ttl=3600)
+def analyze_universe(ticker_list):
+    results = []
+    # Limit to Top 30 to prevent API throttling
+    scan_list = ticker_list[:30] 
+    
+    progress_bar = st.progress(0)
+    for i, t in enumerate(scan_list):
+        try:
+            stock = yf.Ticker(t)
+            info = stock.info
+            
+            # Buffett Metrics: Return on Equity, Debt, and Price Delta
+            results.append({
+                "ticker": t,
+                "price": info.get('currentPrice', 0),
+                "roe": info.get('returnOnEquity', 0),
+                "debt": info.get('debtToEquity', 100),
+                "yield": info.get('dividendYield', 0),
+                "change": info.get('regularMarketChangePercent', 0)
+            })
+            progress_bar.progress((i + 1) / len(scan_list))
+        except: continue
+    return pd.DataFrame(results)
 
-for i, t in enumerate(tickers):
-    with cols[i]:
-        if st.session_state.active_scalp == t:
-            # Active stock pulls REAL data from API
-            with st.spinner("Fetching..."):
-                data = get_live_quote(t)
-            st.metric(label=t, value=data['p'], delta=data['c'])
-        else:
-            # Inactive stocks show placeholders
-            st.metric(label=t, value="--", delta="Locked")
-        
-        if st.button(f"Load {t}", key=f"btn_{t}"):
-            st.session_state.active_scalp = t
-            st.rerun()
+# 3. THE INTERFACE
+st.title("🏛️ Sovereign Omaha Scraper")
+st.markdown("<div class='advisor-brief'><b>System Note:</b> No hardcoded universe detected. Scraping Wikipedia for the current S&P 500 components...</div>", unsafe_allow_html=True)
 
-# 7. TABBED INTERFACE FOR LONG-TERM HORIZONS
+# Process Data
+tickers = get_sp500_tickers()
+df = analyze_universe(tickers)
+
+if not df.empty:
+    # ALGORITHMIC ASSIGNMENT
+    # ⚡ TODAY: Highest 24h Volatility (for scalps)
+    today_pick = df.sort_values("change", ascending=False).iloc[0]
+    
+    # 🗓️ WEEKLY: High ROE but currently down (value swing)
+    weekly_pick = df[df['change'] < 0].sort_values("roe", ascending=False).iloc[0]
+    
+    # 🏗️ SEASONAL: High Yield & Stable Debt
+    seasonal_pick = df.sort_values("yield", ascending=False).iloc[0]
+    
+    # 🏦 ENGINE: The ultimate "Moat" (Max ROE, Min Debt)
+    engine_pick = df.sort_values(["roe", "debt"], ascending=[False, True]).iloc[0]
+
+    cols = st.columns(4)
+    with cols[0]:
+        st.subheader("⚡ TODAY")
+        st.metric(label=today_pick['ticker'], value=f"${today_pick['price']:.2f}", delta=f"{today_pick['change']:.2f}%")
+        st.caption("Momentum Leader")
+
+    with cols[1]:
+        st.subheader("🗓️ WEEKLY")
+        st.metric(label=weekly_pick['ticker'], value=f"${weekly_pick['price']:.2f}", delta=f"{weekly_pick['change']:.2f}%")
+        st.caption("Efficiency at a Discount")
+
+    with cols[2]:
+        st.subheader("🏗️ SEASONAL")
+        st.metric(label=seasonal_pick['ticker'], value=f"${seasonal_pick['price']:.2f}", delta=f"{seasonal_pick['change']:.2f}%")
+        st.caption("Dividend Engine")
+
+    with cols[3]:
+        st.subheader("🏦 ENGINE")
+        st.metric(label=engine_pick['ticker'], value=f"${engine_pick['price']:.2f}", delta=f"{engine_pick['change']:.2f}%")
+        st.caption("High-Moat Champion")
+
 st.divider()
-tab_week, tab_season, tab_engine = st.tabs(["🗓️ Weekly Swings", "🏗️ Seasonal Macro", "🏦 The Engine"])
+st.write("### The Buffett Decision Framework")
 
-with tab_week:
-    st.info("💡 **Weekly Strategy:** We are tracking **NVDA** as it approaches its Jan 2026 earnings gap. Load below to check current resistance.")
-    w_cols = st.columns(5)
-    w_tickers = ["NVDA", "AVGO", "ANET", "WDC", "MSFT"]
-    for idx, wt in enumerate(w_tickers):
-        with w_cols[idx]:
-            if st.button(f"Price: {wt}", key=f"wk_{wt}"):
-                data = get_live_quote(wt)
-                st.metric(label=wt, value=data['p'], delta=data['c'])
-
-with tab_engine:
-    st.write("### 🏦 Wealth Generation")
-    st.markdown("These are the 'Forever' stocks for the 2026–2030 cycle.")
-    e_cols = st.columns(5)
-    e_tickers = ["GOOGL", "TSM", "ASML", "AAPL", "AMZN"]
-    for idx, et in enumerate(e_tickers):
-        with e_cols[idx]:
-            if st.button(f"Check {et}", key=f"eng_{et}"):
-                data = get_live_quote(et)
-                st.metric(label=et, value=data['p'], delta=data['c'])
+st.info("This algorithm prioritizes **Return on Equity (ROE)**. In Buffett's view, a company that can generate 20%+ ROE without taking on massive debt is a 'Wonderful Company' at a fair price.")
