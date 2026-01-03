@@ -2,81 +2,72 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
 
-# 1. Page Configuration & Professional Styling
-st.set_page_config(page_title="Investment Friend MVP", layout="wide", page_icon="📈")
+# 1. Initialize App Memory (Session State)
+if 'active_view' not in st.session_state:
+    st.session_state.active_view = None
+if 'active_ticker' not in st.session_state:
+    st.session_state.active_ticker = None
 
+# 2. Page Styling
+st.set_page_config(page_title="Investment Friend Pro", layout="wide", page_icon="📈")
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; }
     .stMetric { background-color: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 10px; }
-    div[data-testid="metric-container"] { color: white; }
-    h1, h2, h3 { color: #58a6ff !important; font-family: 'Inter', sans-serif; }
-    .advisor-note { background-color: #1f2428; border-left: 5px solid #238636; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+    .advisor-box { background-color: #1f2428; border-left: 5px solid #238636; padding: 20px; border-radius: 8px; margin-bottom: 25px; }
+    .analysis-panel { background-color: #0d1117; border: 1px dashed #58a6ff; padding: 20px; border-radius: 10px; margin-top: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. Senior Advisor Logic: The 2026 Strategy Engine
-# These are our "Aggressive Default" picks for January 3, 2026
+# 3. Data Strategy
 STRATEGY = {
-    "TODAY": {"ticker": "MU", "goal": "Day Trade Scalp", "target": "$325.00", "risk": "High"},
-    "WEEK": {"ticker": "NVDA", "goal": "Catalyst Swing", "target": "$210.00", "risk": "Medium-High"},
-    "SEASON": {"ticker": "VRT", "goal": "Infrastructure Trend", "target": "Q1 Earnings Rally", "risk": "Medium"},
-    "ENGINE": {"ticker": "TSM", "goal": "Wealth Compounder", "target": "Intrinsic Value $420", "risk": "Low-Medium"}
+    "TODAY": {"ticker": "MU", "setup": "Scalp the $315 level. Look for high-volume breakout.", "moat": "Dominant in HBM4 memory chips for AI."},
+    "WEEK": {"ticker": "NVDA", "setup": "Swing trade. Accumulate at $185 for a $210 target.", "moat": "The undisputed king of the AI GPU software ecosystem."},
+    "SEASON": {"ticker": "VRT", "setup": "6-month hold. Power cooling is the bottleneck of 2026.", "moat": "Global leader in data center thermal management."},
+    "ENGINE": {"ticker": "TSM", "setup": "Wealth engine. Buy every dip below $310.", "moat": "The only foundry capable of 2nm mass production."}
 }
 
-def get_live_data(ticker):
-    try:
-        data = yf.Ticker(ticker).history(period="5d")
-        return data['Close'].iloc[-1], ((data['Close'].iloc[-1] - data['Close'].iloc[-2]) / data['Close'].iloc[-2]) * 100
-    except:
-        return 0.0, 0.0
+# 4. Main UI
+st.title("🏛️ Senior Advisor Terminal")
+st.markdown("<div class='advisor-box'><b>Current Stance: Aggressive.</b> We are prioritizing 'The Physicality of AI' (Memory & Power) over SaaS for Q1 2026.</div>", unsafe_allow_html=True)
 
-# 3. Sidebar: The "Aggressive Friend" Controls
-with st.sidebar:
-    st.title("Senior Advisor 🏛️")
-    st.success("Mode: Aggressive Default")
-    st.info("Market Context: Early 2026 AI Expansion Phase")
-    if st.button("Change Assumptions"):
-        st.warning("Questionnaire Coming in v1.2")
-    st.divider()
-    st.write("Current VIX: **14.5 (Calm)**")
-    st.write("S&P 500 Target: **7,800**")
-
-# 4. Main Dashboard Header
-st.title("Welcome back, Friend.")
-st.markdown("""<div class="advisor-note">
-    <b>Senior Advisor's Briefing:</b> The first week of 2026 is showing strong institutional flow into 
-    AI memory and power infrastructure. We are staying <b>Aggressive</b>. Here is your roadmap:
-    </div>""", unsafe_allow_html=True)
-
-# 5. The Four-Horizon Dashboard
 cols = st.columns(4)
-
 for i, (horizon, info) in enumerate(STRATEGY.items()):
     with cols[i]:
-        price, change = get_live_data(info['ticker'])
-        st.subheader(f"{horizon}")
-        st.metric(label=f"{info['ticker']} (Current)", value=f"${price:,.2f}", delta=f"{change:.2f}%")
-        st.write(f"**Goal:** {info['goal']}")
-        st.write(f"**Target:** {info['target']}")
+        # Simple data fetch
+        price = yf.Ticker(info['ticker']).history(period="1d")['Close'].iloc[-1]
+        st.subheader(horizon)
+        st.metric(label=info['ticker'], value=f"${price:,.2f}")
         
-        # Action Trigger
-        if horizon == "TODAY":
-            st.button("View Setup", key=f"btn_{i}", use_container_width=True)
-        else:
-            st.button("Analyze Moat", key=f"btn_{i}", use_container_width=True)
+        # Button Logic: These now save the choice to memory (Session State)
+        if st.button(f"Deep Dive: {info['ticker']}", key=f"btn_{horizon}"):
+            st.session_state.active_view = horizon
+            st.session_state.active_ticker = info['ticker']
 
-# 6. Real-Time Charting for the "Active" Pick
-st.divider()
-st.subheader(f"Strategic Focus: {STRATEGY['WEEK']['ticker']} Analysis")
-chart_data = yf.Ticker(STRATEGY['WEEK']['ticker']).history(period="1mo")
-fig = go.Figure(data=[go.Candlestick(x=chart_data.index,
-                open=chart_data['Open'], high=chart_data['High'],
-                low=chart_data['Low'], close=chart_data['Close'])])
-fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20))
-st.plotly_chart(fig, use_container_width=True)
+# 5. The "Deep Dive" Panel (Only shows when a button is clicked)
+if st.session_state.active_view:
+    view = st.session_state.active_view
+    ticker = st.session_state.active_ticker
+    
+    st.divider()
+    st.markdown(f"<div class='analysis-panel'><h3>🔍 Analysis for {ticker} ({view} Play)</h3>", unsafe_allow_html=True)
+    
+    col_a, col_b = st.columns([2, 1])
+    
+    with col_a:
+        st.write(f"**Execution Setup:** {STRATEGY[view]['setup']}")
+        st.write(f"**Competitive Moat:** {STRATEGY[view]['moat']}")
+        
+        # Live Charting
+        hist = yf.Ticker(ticker).history(period="1mo")
+        fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'])])
+        fig.update_layout(template="plotly_dark", height=400, margin=dict(l=0,r=0,b=0,t=0))
+        st.plotly_chart(fig, use_container_width=True)
 
-# 7. Disclaimer
-st.caption("Disclaimer: This app provides algorithm-driven suggestions based on aggressive defaults. Not financial advice. Past performance does not guarantee 2026 returns.")
+    with col_b:
+        st.info("💡 Senior Advisor Tip")
+        st.write(f"In 2026, {ticker} is a core holding. If you are playing the **{view}** horizon, watch the 10-year yield. If it spikes, tighten your stop loss.")
+        if st.button("Close Analysis"):
+            st.session_state.active_view = None
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
