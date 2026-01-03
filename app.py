@@ -3,8 +3,8 @@ import pandas as pd
 import yfinance as yf
 import requests
 
-# 1. PAGE CONFIG & THEME
-st.set_page_config(page_title="2026 Sovereign AI Terminal", layout="wide")
+# 1. PREMIUM TERMINAL CONFIG
+st.set_page_config(page_title="2026 Sovereign Dynamic", layout="wide")
 st.markdown("""
     <style>
     .main { background-color: #0b0e11; }
@@ -17,106 +17,110 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DYNAMIC CONTENT GENERATOR (The "Reasoning" Engine)
-def generate_dynamic_reasoning(ticker, change, price, name):
-    """Generates a briefing based on data patterns rather than hardcoded text."""
-    if change > 4:
-        return f"<b>{name}</b> is currently the market's <b>Momentum Alpha</b>. With a {change:.2f}% surge, it has broken above the primary pivot, indicating aggressive institutional accumulation."
-    elif change < -4:
-        return f"<b>{name}</b> is undergoing a <b>Technical Flush</b>. The -{abs(change):.2f}% drop suggests high-volume profit taking. Monitor the Entry (S1) level for a mean-reversion scalp opportunity."
-    elif abs(change) > 2:
-        return f"<b>{name}</b> is showing <b>Elevated Volatility</b>. Institutional flow is currently { 'Bullish' if change > 0 else 'Bearish' }. This is a high-probability day trade setup."
-    else:
-        return f"<b>{name}</b> is showing <b>Stable Consolidation</b>. It has been selected due to its high liquidity and position within the top-movers of the S&P 500."
-
-# 3. GLOBAL SCRAPER (Fetches S&P 500 dynamically)
+# 2. THE VOLATILITY RANKER (Pure Logic - No Hardcoding)
 @st.cache_data(ttl=3600)
-def get_sp500_tickers():
+def get_sp500_universe():
+    """Scrapes S&P 500 symbols from Wikipedia."""
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    # Added headers to look like a browser to prevent 403 blocks
     headers = {"User-Agent": "Mozilla/5.0"}
     response = requests.get(url, headers=headers)
     df = pd.read_html(response.text)[0]
     return df[['Symbol', 'Security']].values.tolist()
 
 @st.cache_data(ttl=600)
-def fetch_top_movers(ticker_list):
-    """Scans the top of the index to find the 5 most volatile stocks."""
+def fetch_and_rank_movers(universe):
+    """Fetches real-time data for the top 100 titans and ranks by absolute change."""
     results = []
-    # Scan the first 50 titans (largest by index weight) to stay within API limits
-    for symbol, name in ticker_list[:50]:
+    # Scan the top 100 for API efficiency on Streamlit Cloud
+    for symbol, name in universe[:100]:
         try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="2d")
-            if len(hist) < 2: continue
+            t = yf.Ticker(symbol)
+            h = t.history(period="2d")
+            if len(h) < 2: continue
             
-            p_curr = hist['Close'].iloc[-1]
-            p_prev = hist['Close'].iloc[-2]
-            change = ((p_curr - p_prev) / p_prev) * 100
+            p_curr = h['Close'].iloc[-1]
+            p_prev = h['Close'].iloc[-2]
+            pct_change = ((p_curr - p_prev) / p_prev) * 100
             
-            # Pivot Math
-            pivot = (hist['High'].iloc[-2] + hist['Low'].iloc[-2] + p_prev) / 3
-            r1 = (2 * pivot) - hist['Low'].iloc[-2]
-            s1 = (2 * pivot) - hist['High'].iloc[-2]
+            # Pivot Points
+            piv = (h['High'].iloc[-2] + h['Low'].iloc[-2] + p_prev) / 3
+            r1 = (2 * piv) - h['Low'].iloc[-2]
+            s1 = (2 * piv) - h['High'].iloc[-2]
             
             results.append({
-                "symbol": symbol, "name": name, "price": p_curr, "change": change,
+                "ticker": symbol, "name": name, "price": p_curr, "change": pct_change,
                 "entry": s1, "target": r1, "stop": s1 * 0.985, "over": p_curr > r1
             })
         except: continue
-    # Dynamic Sort: Highest Absolute Change (The 'Active' Stocks)
+    # THE DYNAMIC SORT: Absolute value of change (highest movers, regardless of direction)
     return sorted(results, key=lambda x: abs(x['change']), reverse=True)[:5]
 
-# 4. DASHBOARD UI
-st.title("🏛️ Sovereign Pure-Dynamic Terminal")
-st.write("### ⚡ Today's Momentum Leaders (Algorithmic Selection)")
+# 3. ADVISOR REASONING ENGINE
+def get_briefing(stock):
+    c = stock['change']
+    name = stock['name']
+    if c > 5:
+        return f"<b>{name}</b> is leading the market with a massive breakout (+{c:.1f}%). Bullish institutional accumulation detected."
+    elif c < -5:
+        return f"<b>{name}</b> is undergoing an aggressive technical flush (-{abs(c):.1f}%). Watch for a bounce at the Entry (S1) level."
+    else:
+        return f"<b>{name}</b> is showing high relative volume compared to peers. Active day-trading range confirmed."
 
-with st.spinner("Scraping S&P 500 and Ranking Volatility..."):
-    sp500 = get_sp500_tickers()
-    leaders = fetch_top_movers(sp500)
+# 4. DASHBOARD UI
+st.title("🏛️ Sovereign Dynamic Terminal")
+st.write("### ⚡ Today's Momentum Leaders (Ranked by Volatility)")
+
+# Discovery State
+if 'unlocked' not in st.session_state:
+    st.session_state.unlocked = []
+
+with st.spinner("Analyzing Global Volatility..."):
+    sp500 = get_sp500_universe()
+    leaders = fetch_and_rank_movers(sp500)
 
 cols = st.columns(5)
 for i, stock in enumerate(leaders):
     with cols[i]:
-        status = "OVEREXTENDED" if stock['over'] else "STRIKE ZONE"
-        p_color = "#f85149" if stock['over'] else "#3fb950"
-        
-        st.metric(label=stock['symbol'], value=f"${stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
-        
-        # Tactical Box
-        st.markdown(f"""
-            <div class="strike-zone-card">
-                <span style="color:{p_color}; font-size:0.7rem; font-weight:bold;">{status}</span><br>
-                <span class="val-entry">Entry: ${stock['entry']:.2f}</span><br>
-                <span class="val-target">Target: ${stock['target']:.2f}</span><br>
-                <span class="val-stop">Stop: ${stock['stop']:.2f}</span>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # Reasoning Box (Dynamic Reasoning)
-        reasoning = generate_dynamic_reasoning(stock['symbol'], stock['change'], stock['price'], stock['name'])
-        st.markdown(f"<div class='advisor-brief'>{reasoning}</div>", unsafe_allow_html=True)
+        # Logic: Show 1st one, lock the rest
+        if i == 0 or stock['ticker'] in st.session_state.unlocked:
+            p_color = "#f85149" if stock['over'] else "#3fb950"
+            status = "OVEREXTENDED" if stock['over'] else "STRIKE ZONE"
+            
+            st.metric(label=stock['ticker'], value=f"${stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
+            st.markdown(f"""
+                <div class="strike-zone-card">
+                    <span style="color:{p_color}; font-size:0.7rem; font-weight:bold;">{status}</span><br>
+                    <span class="val-entry">Entry: ${stock['entry']:.2f}</span><br>
+                    <span class="val-target">Target: ${stock['target']:.2f}</span><br>
+                    <span class="val-stop">Stop: ${stock['stop']:.2f}</span>
+                </div>
+                <div class="advisor-brief">{get_briefing(stock)}</div>
+            """, unsafe_allow_html=True)
+        else:
+            st.metric(label=stock['ticker'], value="--", delta="Locked")
+            if st.button(f"Load {stock['ticker']}", key=f"btn_{stock['ticker']}"):
+                st.session_state.unlocked.append(stock['ticker'])
+                st.rerun()
 
 st.divider()
 
 # 5. UNIVERSAL SEARCH (Zero Constraints)
-st.write("### 🔍 Strategic Asset Search")
-query = st.text_input("Analyze any ticker in the world:").upper()
+st.write("### 🔍 Tactical Deep-Dive Search")
+query = st.text_input("Analyze any global ticker (e.g. NVDA, RKLB):").upper()
 if query:
     try:
-        q_ticker = yf.Ticker(query)
-        q_h = q_ticker.history(period="2d")
-        q_info = q_ticker.info
+        q_t = yf.Ticker(query)
+        q_h = q_t.history(period="2d")
         if not q_h.empty:
             p = q_h['Close'].iloc[-1]
             prev = q_h['Close'].iloc[-2]
-            c = ((p - prev) / prev) * 100
+            chg = ((p - prev) / prev) * 100
             piv = (q_h['High'].iloc[-2] + q_h['Low'].iloc[-2] + prev) / 3
             s1 = (2 * piv) - q_h['High'].iloc[-2]
             r1 = (2 * piv) - q_h['Low'].iloc[-2]
             
             c1, c2 = st.columns([1, 2])
-            with c1: st.metric(label=query, value=f"${p:.2f}", delta=f"{c:.2f}%")
+            with c1: st.metric(label=query, value=f"${p:.2f}", delta=f"{chg:.2f}%")
             with c2:
                 st.markdown(f"""
                     <div class="strike-zone-card" style="font-size:1.1rem; padding:20px;">
@@ -125,7 +129,4 @@ if query:
                         <span class="val-stop">Stop: ${s1*0.985:.2f}</span>
                     </div>
                 """, unsafe_allow_html=True)
-                res = generate_dynamic_reasoning(query, c, p, q_info.get('longName', query))
-                st.markdown(f"<div class='advisor-brief'>{res}</div>", unsafe_allow_html=True)
-    except:
-        st.error("Ticker not found or data feed restricted.")
+    except: st.error("Feed error.")
