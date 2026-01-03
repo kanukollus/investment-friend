@@ -1,88 +1,83 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
 import requests
+import plotly.graph_objects as go
 
-# 1. Page Configuration MUST be the first Streamlit command
-st.set_page_config(page_title="Investment Friend 2026", layout="wide", page_icon="🚀")
+# 1. SETUP & THEMES
+st.set_page_config(page_title="2026 Advisor Terminal", layout="wide")
 
-# 2. Modern Caching Logic (Fixed NameError)
-# We use a custom User-Agent to make the server look like a person's browser
+# PLACE YOUR KEY HERE or use the 'demo' key to test (demo only works for IBM)
+API_KEY = "ZFVR5I30DHJS6MEV" 
+
+st.markdown("""
+    <style>
+    .metric-card { background-color: #161b22; border-radius: 10px; padding: 20px; border: 1px solid #30363d; }
+    .status-live { color: #238636; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# 2. DATA ENGINE (ALPHA VANTAGE)
+@st.cache_data(ttl=600) # Refreshes every 10 mins
+def fetch_alpha_data(ticker):
+    url = f'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={API_KEY}'
+    r = requests.get(url)
+    data = r.json()
+    return data.get("Global Quote", {})
+
 @st.cache_data(ttl=3600)
-def fetch_market_data(ticker):
-    try:
-        session = requests.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        })
-        yf_ticker = yf.Ticker(ticker, session=session)
-        # Pulling 1 month for the chart, but we'll use the last 2 days for metrics
-        hist = yf_ticker.history(period="1mo")
-        return hist if not hist.empty else None
-    except Exception:
-        return None
+def fetch_alpha_history(ticker):
+    url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&apikey={API_KEY}'
+    r = requests.get(url)
+    data = r.json()
+    # Convert JSON to DataFrame for Plotly
+    ts = data.get("Time Series (Daily)", {})
+    df = pd.DataFrame.from_dict(ts, orient='index').astype(float)
+    df.index = pd.to_datetime(df.index)
+    return df.sort_index()
 
-# 3. Aggressive Strategy Definitions
+# 3. STRATEGY DEFINITIONS
 STRATEGY = {
-    "TODAY": {"ticker": "MU", "note": "High Volatility Scalp", "moat": "HBM4 AI Memory Lead"},
-    "WEEK": {"ticker": "NVDA", "note": "Institutional Swing", "moat": "CUDA Software Lock-in"},
-    "SEASON": {"ticker": "VRT", "note": "Infrastructure Trend", "moat": "Thermal Management Dominance"},
-    "ENGINE": {"ticker": "TSM", "note": "The Wealth Engine", "moat": "2nm Foundry Monopoly"}
+    "TODAY": {"ticker": "MU", "label": "Day Trade", "desc": "Memory Cycle Peak"},
+    "WEEK": {"ticker": "NVDA", "label": "Swing", "desc": "AI Software Momentum"},
+    "SEASON": {"ticker": "VRT", "label": "Tactical", "desc": "Power Grid Bottleneck"},
+    "ENGINE": {"ticker": "TSM", "label": "Wealth", "desc": "Global Foundry Lead"}
 }
 
-# Initialize Session Memory
-if 'active_view' not in st.session_state:
-    st.session_state.active_view = None
-
-# 4. Header & Advisor Note
+# 4. APP UI
 st.title("🏛️ Senior Advisor Terminal")
-st.markdown("""
-<div style="background-color: #1f2428; border-left: 5px solid #238636; padding: 20px; border-radius: 8px;">
-    <b>Advisor's 2026 Outlook:</b> Aggressive stance remains. We are buying the "Physicality of AI" 
-    bottlenecks: Memory, Power, and Foundries.
-</div>
-""", unsafe_allow_html=True)
+st.write(f"Connected to Private Data Feed | Stance: **Aggressive**")
 
-# 5. The Dashboard Cards
-st.write("### The Four Horizons")
+if API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE":
+    st.warning("⚠️ Action Required: Please paste your Alpha Vantage API Key in the code to see live 2026 data.")
+
 cols = st.columns(4)
-
 for i, (horizon, info) in enumerate(STRATEGY.items()):
     with cols[i]:
-        hist = fetch_market_data(info['ticker'])
-        if hist is not None:
-            price = hist['Close'].iloc[-1]
-            prev_price = hist['Close'].iloc[-2]
-            change = ((price - prev_price) / prev_price) * 100
-            st.metric(label=f"{horizon}: {info['ticker']}", value=f"${price:,.2f}", delta=f"{change:.2f}%")
-        else:
-            st.error(f"Waiting for {info['ticker']} Feed...")
+        quote = fetch_alpha_data(info['ticker'])
+        price = quote.get("05. price", "0.00")
+        change = quote.get("10. change percent", "0.00%")
         
-        if st.button(f"Analyze {info['ticker']}", key=f"btn_{horizon}"):
-            st.session_state.active_view = horizon
+        st.markdown(f"### {horizon}")
+        st.metric(label=f"{info['label']}: {info['ticker']}", value=f"${float(price):.2f}", delta=change)
+        st.caption(info['desc'])
+        
+        if st.button(f"Analyze {info['ticker']}", key=f"btn_{i}"):
+            st.session_state.active_ticker = info['ticker']
 
-# 6. Deep Dive Panel
-if st.session_state.active_view:
-    view = st.session_state.active_view
-    ticker = STRATEGY[view]['ticker']
-    hist = fetch_market_data(ticker)
-    
+# 5. DEEP DIVE CHARTING
+if 'active_ticker' in st.session_state:
+    ticker = st.session_state.active_ticker
     st.divider()
-    col_left, col_right = st.columns([2, 1])
+    st.subheader(f"🔍 Strategic Analysis: {ticker}")
     
-    with col_left:
-        st.subheader(f"🔍 {ticker} Strategic Analysis")
-        if hist is not None:
-            fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], 
-                            high=hist['High'], low=hist['Low'], close=hist['Close'])])
-            fig.update_layout(template="plotly_dark", height=450, margin=dict(l=0,r=0,b=0,t=0))
-            st.plotly_chart(fig, use_container_width=True)
-            
-    with col_right:
-        st.info(f"**Advisor Logic for {ticker}**")
-        st.write(f"**Primary Moat:** {STRATEGY[view]['moat']}")
-        st.write(f"**Execution:** {STRATEGY[view]['note']}")
-        if st.button("Close Deep Dive"):
-            st.session_state.active_view = None
-            st.rerun()
+    df = fetch_alpha_history(ticker)
+    if not df.empty:
+        fig = go.Figure(data=[go.Candlestick(x=df.index,
+                        open=df['1. open'], high=df['2. high'],
+                        low=df['3. low'], close=df['4. close'])])
+        fig.update_layout(template="plotly_dark", height=400)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    if st.button("Close Analysis"):
+        del st.session_state.active_ticker
+        st.rerun()
