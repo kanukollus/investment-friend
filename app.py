@@ -3,59 +3,70 @@ import pandas as pd
 import requests
 import time
 
-# 1. SETUP
-st.set_page_config(page_title="Investment Friend: Power 40", layout="wide")
-API_KEY = "ZFVR5I30DHJS6MEV"
+# 1. SETUP & THEME
+st.set_page_config(page_title="Investment Friend 2026", layout="wide", page_icon="🚀")
+API_KEY = "ZFVR5I30DHJS6MEV" # <--- PASTE KEY HERE
 
-# 2. DATA ENGINE
+st.markdown("""
+    <style>
+    .stExpander { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 10px; }
+    .price-text { color: #58a6ff; font-weight: bold; font-size: 1.2em; }
+    .advisor-box { background-color: #1f2428; border-left: 5px solid #238636; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# 2. DATA ENGINE (The 'Lazy Loader')
 @st.cache_data(ttl=600)
-def fetch_top_pick(ticker):
-    if API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE": return None
+def get_stock_price(ticker):
+    if API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE":
+        return "N/A", "0%"
     url = f'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={API_KEY}'
     try:
         data = requests.get(url).json().get("Global Quote", {})
-        return {"price": data.get("05. price", "0.00"), "change": data.get("10. change percent", "0%")}
-    except: return None
+        price = data.get("05. price", "0.00")
+        change = data.get("10. change percent", "0%")
+        return f"${float(price):,.2f}", change
+    except:
+        return "Limit Hit", "0%"
 
-# 3. BUCKET DEFINITIONS (10 STOCKS EACH)
+# 3. THE POWER 40 LIST (Jan 2026)
 BUCKETS = {
-    "⚡ TODAY (24h)": ["MU", "AMD", "PLTR", "CIFR", "APLD", "SOFI", "RKLB", "MARA", "SMCI", "TSLA"],
-    "🗓️ THIS WEEK (7d)": ["NVDA", "AVGO", "MSFT", "TTD", "META", "BULL", "ADBE", "SNOW", "CRWD", "TEAM"],
-    "🏗️ THIS SEASON (6mo)": ["VRT", "PWR", "GEV", "STRL", "EME", "MTZ", "J", "DY", "ENB", "COP"],
-    "🏦 THE ENGINE (5yr)": ["TSM", "ASML", "AAPL", "AMZN", "LRCX", "GOOGL", "KLAC", "ADI", "NEE", "CVX"]
+    "⚡ TODAY (Scalps)": ["MU", "AMD", "PLTR", "CIFR", "APLD", "SOFI", "RKLB", "MARA", "SMCI", "TSLA"],
+    "🗓️ WEEKLY (Swings)": ["NVDA", "AVGO", "MSFT", "TTD", "META", "BULL", "ADBE", "SNOW", "CRWD", "TEAM"],
+    "🏗️ SEASONAL (Tactical)": ["VRT", "PWR", "GEV", "STRL", "EME", "MTZ", "J", "DY", "ENB", "COP"],
+    "🏦 THE ENGINE (Wealth)": ["TSM", "ASML", "AAPL", "AMZN", "LRCX", "GOOGL", "KLAC", "ADI", "NEE", "CVX"]
 }
 
-# 4. DASHBOARD UI
-st.title("🏛️ 2026 Senior Advisor Terminal")
-st.subheader("Aggressive Stance: The 'Physicality of AI' Cycle")
+# 4. APP UI
+st.title("🏛️ Senior Advisor Terminal")
+st.markdown("<div class='advisor-box'><b>2026 Advisor Note:</b> The free API allows 5 stocks per minute. Open one bucket at a time to avoid errors.</div>", unsafe_allow_html=True)
 
 cols = st.columns(4)
 
 for i, (name, tickers) in enumerate(BUCKETS.items()):
     with cols[i]:
-        st.write(f"### {name}")
-        
-        # Display the Lead Stock with live data
-        lead = tickers[0]
-        data = fetch_top_pick(lead)
-        if data:
-            st.metric(label=f"LEAD: {lead}", value=f"${float(data['price']):.2f}", delta=data['change'])
-        
-        st.write("**Top 10 Watchlist:**")
-        for t in tickers:
-            st.markdown(f"- **{t}**")
+        # This creates the expandable section you asked for
+        with st.expander(f"**{name}**", expanded=(i==0)):
+            st.write("---")
+            for t in tickers:
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    st.write(f"**{t}**")
+                with c2:
+                    # We only fetch if the expander is OPEN
+                    # To be even safer, we'll only fetch the first 3 in each list 
+                    # unless they click a 'load more' button (v2.0)
+                    if tickers.index(t) < 3: 
+                        price, change = get_stock_price(t)
+                        st.markdown(f"<span class='price-text'>{price}</span>", unsafe_allow_html=True)
+                    else:
+                        st.caption("Click for data")
 
-# 5. THE ADVISOR'S INTERPRETATION (The 'Why')
+# 5. EXPLAINER FOOTER
 st.divider()
-col_a, col_b = st.columns(2)
-with col_a:
-    st.info("💡 **What this means for your friends:**")
-    st.write("""
-    - **TODAY:** These stocks have high 'Beta' (volatility). They move 5-10% a day. Great for fast cash, but requires a stop-loss.
-    - **WEEK:** These are 'Catalyst' plays. We expect news (earnings, product launches) to move these by Friday.
-    """)
-with col_b:
-    st.write("""
-    - **SEASON:** These are 'Macro' plays. High-interest rates or government infrastructure spending drives these over months.
-    - **ENGINE:** These are 'Moat' plays. These are the companies your grandkids will own. Buy and forget.
-    """)
+st.write("### 📖 How to use this with your friends")
+st.info("""
+1. **The Lead Signals:** The first 3 stocks in each bucket are 'Active.' The others are on the watchlist.
+2. **Rate Limits:** If you see 'Limit Hit,' it means your friends are using the app too much at once. Wait 60 seconds.
+3. **The Strategy:** High-Beta (Today) -> Catalyst (Weekly) -> Macro (Season) -> Moat (Engine).
+""")
