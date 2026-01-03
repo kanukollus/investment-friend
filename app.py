@@ -1,45 +1,49 @@
 import streamlit as st
 import pandas as pd
 import requests
-import time
 
-# 1. Page Config
+# 1. SETUP
 st.set_page_config(page_title="Investment Friend 2026", layout="wide")
 API_KEY = "ZFVR5I30DHJS6MEV" # <--- REPLACE WITH YOUR KEY
 
-# 2. Styling
+# 2. CUSTOM CSS FOR COLOR BOXES
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #1f2428; color: #58a6ff; border: 1px solid #30363d; }
-    .stButton>button:hover { border-color: #238636; color: white; }
-    .price-box { background-color: #161b22; padding: 10px; border-radius: 5px; border: 1px solid #238636; text-align: center; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #1f2428; color: #58a6ff; border: 1px solid #30363d; margin-bottom: 5px; }
+    .stButton>button:hover { border-color: #58a6ff; }
+    .price-box-up { background-color: #062512; padding: 10px; border-radius: 5px; border: 1px solid #238636; text-align: center; color: #3fb950; }
+    .price-box-down { background-color: #2c1111; padding: 10px; border-radius: 5px; border: 1px solid #da3633; text-align: center; color: #f85149; }
+    .advisor-note { font-style: italic; color: #8b949e; font-size: 0.9em; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. Data Engine (The 'Lazy Fetcher')
-def fetch_price(ticker):
+# 3. THE DATA ENGINE
+def fetch_price_data(ticker):
     if API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE":
-        return "Key Missing", "0%"
+        return None
     url = f'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={API_KEY}'
     try:
         data = requests.get(url).json().get("Global Quote", {})
-        price = data.get("05. price", "0.00")
-        change = data.get("10. change percent", "0%")
-        return f"${float(price):,.2f}", change
+        if not data: return None
+        return {
+            "price": f"${float(data.get('05. price', 0)):,.2f}",
+            "change": data.get("10. change percent", "0%"),
+            "is_up": "-" not in data.get("10. change percent", "0")
+        }
     except:
-        return "Limit Hit", "0%"
+        return None
 
-# 4. Buckets
+# 4. POWER 40 BUCKETS (2026 LEADERS)
 BUCKETS = {
-    "⚡ TODAY": ["MU", "AMD", "PLTR", "CIFR", "APLD", "SOFI", "RKLB", "MARA", "SMCI", "TSLA"],
-    "🗓️ WEEKLY": ["NVDA", "AVGO", "MSFT", "TTD", "META", "BULL", "ADBE", "SNOW", "CRWD", "TEAM"],
-    "🏗️ SEASONAL": ["VRT", "PWR", "GEV", "STRL", "EME", "MTZ", "J", "DY", "ENB", "COP"],
-    "🏦 ENGINE": ["TSM", "ASML", "AAPL", "AMZN", "LRCX", "GOOGL", "KLAC", "ADI", "NEE", "CVX"]
+    "⚡ TODAY (Scalp)": ["MU", "AMD", "PLTR", "CIFR", "APLD", "SOFI", "RKLB", "MARA", "SMCI", "TSLA"],
+    "🗓️ WEEKLY (Swing)": ["NVDA", "AVGO", "MSFT", "TTD", "META", "BULL", "ADBE", "SNOW", "CRWD", "TEAM"],
+    "🏗️ SEASONAL (Macro)": ["VRT", "PWR", "GEV", "STRL", "EME", "MTZ", "J", "DY", "ENB", "COP"],
+    "🏦 ENGINE (Wealth)": ["TSM", "ASML", "AAPL", "AMZN", "LRCX", "GOOGL", "KLAC", "ADI", "NEE", "CVX"]
 }
 
-# 5. UI Logic
+# 5. DASHBOARD UI
 st.title("🏛️ Senior Advisor Terminal")
-st.info("💡 **How to use:** Click a stock to fetch its live 2026 price. This protects your free API limit.")
+st.write("Aggressive Default Stance: **Active** | Market: **Early 2026**")
 
 cols = st.columns(4)
 
@@ -47,17 +51,22 @@ for i, (name, tickers) in enumerate(BUCKETS.items()):
     with cols[i]:
         st.subheader(name)
         for t in tickers:
-            # Create a unique key for each button
             if st.button(f"Analyze {t}", key=f"btn_{t}"):
-                price, change = fetch_price(t)
-                st.markdown(f"""
-                <div class="price-box">
-                    <b style="font-size: 1.2em;">{t}: {price}</b><br>
-                    <span style="color: {'#238636' if '+' in change else '#da3633'}">{change}</span>
-                </div>
-                """, unsafe_allow_html=True)
+                data = fetch_price_data(t)
+                if data:
+                    # Choose style based on 'is_up' boolean
+                    box_class = "price-box-up" if data['is_up'] else "price-box-down"
+                    st.markdown(f"""
+                        <div class="{box_class}">
+                            <b style="font-size: 1.3em;">{t}: {data['price']}</b><br>
+                            <span>{data['change']}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.error("API Limit Hit. Wait 60s.")
             else:
                 st.write(f"• {t}")
 
+# 6. ADVISOR LEGEND
 st.divider()
-st.caption("Status: Aggressive Default Mode | Data Feed: Alpha Vantage (2026 Version)")
+st.info("💡 **Friend's Tip:** In 2026, the 'Physical AI' stocks (Power & Memory) are leading the Green moves. If you see a Red box in the ENGINE bucket, that's often a 'Buying Opportunity'.")
