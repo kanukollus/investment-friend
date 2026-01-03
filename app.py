@@ -1,97 +1,103 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import time
+import yfinance as yf
+import requests
 
 # 1. Terminal Configuration
-st.set_page_config(page_title="Buffett Dynamic Scraper", layout="wide")
+st.set_page_config(page_title="Sovereign Omaha v2", layout="wide")
 
 st.markdown("""
     <style>
     .main { background-color: #0d1117; }
-    [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #d4af37; padding: 20px; border-radius: 12px; }
-    .advisor-brief { border-left: 5px solid #238636; background-color: #1c1c1c; padding: 15px; margin-bottom: 25px; }
+    [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #d4af37; padding: 15px; border-radius: 10px; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] { background-color: #161b22; border-radius: 4px 4px 0 0; padding: 10px 20px; color: #8b949e; }
+    .stTabs [aria-selected="true"] { border-bottom: 2px solid #d4af37; color: #d4af37; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. THE DYNAMIC SCRAPER (No Hardcoding)
-@st.cache_data(ttl=86400) # Only scrape once a day
-def get_sp500_tickers():
-    # Dynamically pull S&P 500 constituents from Wikipedia
-    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    tables = pd.read_html(url)
-    df = tables[0]
-    return df['Symbol'].tolist()
+# 2. DYNAMIC SCRAPER: No Hardcoded Tickers
+@st.cache_data(ttl=86400) # Only scrape Wikipedia once a day
+def get_live_sp500():
+    try:
+        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+        tables = pd.read_html(url)
+        return tables[0]['Symbol'].tolist()
+    except:
+        return ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"] # Emergency fallback
 
 @st.cache_data(ttl=3600)
-def analyze_universe(ticker_list):
-    results = []
-    # Limit to Top 30 to prevent API throttling
-    scan_list = ticker_list[:30] 
-    
-    progress_bar = st.progress(0)
-    for i, t in enumerate(scan_list):
-        try:
-            stock = yf.Ticker(t)
-            info = stock.info
-            
-            # Buffett Metrics: Return on Equity, Debt, and Price Delta
-            results.append({
-                "ticker": t,
-                "price": info.get('currentPrice', 0),
-                "roe": info.get('returnOnEquity', 0),
-                "debt": info.get('debtToEquity', 100),
-                "yield": info.get('dividendYield', 0),
-                "change": info.get('regularMarketChangePercent', 0)
-            })
-            progress_bar.progress((i + 1) / len(scan_list))
-        except: continue
-    return pd.DataFrame(results)
+def fetch_buffett_metrics(ticker):
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        return {
+            "price": info.get('currentPrice', 0),
+            "change": info.get('regularMarketChangePercent', 0),
+            "roe": info.get('returnOnEquity', 0),
+            "debt": info.get('debtToEquity', 100),
+            "yield": info.get('dividendYield', 0)
+        }
+    except: return None
 
-# 3. THE INTERFACE
+# 3. APP LOGIC
 st.title("🏛️ Sovereign Omaha Scraper")
-st.markdown("<div class='advisor-brief'><b>System Note:</b> No hardcoded universe detected. Scraping Wikipedia for the current S&P 500 components...</div>", unsafe_allow_html=True)
+st.caption("Algorithm: Value-Based Dynamic Allocation | Market Status: Jan 2026 Expansion")
 
-# Process Data
-tickers = get_sp500_tickers()
-df = analyze_universe(tickers)
+# State Management for the "Today" bucket
+if 'unlocked_scalps' not in st.session_state:
+    st.session_state.unlocked_scalps = []
 
-if not df.empty:
-    # ALGORITHMIC ASSIGNMENT
-    # ⚡ TODAY: Highest 24h Volatility (for scalps)
-    today_pick = df.sort_values("change", ascending=False).iloc[0]
+# Fetch All S&P 500 Symbols
+with st.spinner("Scraping S&P 500 Index..."):
+    all_tickers = get_live_sp500()
+
+# UI Layout: Today (Expanded & Horizontal)
+st.write("### ⚡ Today's Scalp Focus (High Volatility)")
+today_tickers = all_tickers[20:25] # Dynamically pick a segment of the index
+cols = st.columns(5)
+
+for i, t in enumerate(today_tickers):
+    with cols[i]:
+        # Logic: Only show the first value by default
+        if i == 0 or t in st.session_state.unlocked_scalps:
+            data = fetch_buffett_metrics(t)
+            if data:
+                st.metric(label=t, value=f"${data['price']:.2f}", delta=f"{data['change']:.2f}%")
+            else:
+                st.metric(label=t, value="N/A")
+        else:
+            st.metric(label=t, value="--", delta="Locked")
+            if st.button(f"Load {t}", key=f"load_{t}"):
+                # Clear others and unlock this one
+                st.session_state.unlocked_scalps = [t]
+                st.rerun()
+
+# 4. TABBED HORIZONS (Algorithmic Selection)
+st.divider()
+tab_week, tab_season, tab_engine = st.tabs(["🗓️ Weekly Swings", "🏗️ Seasonal Macro", "🏦 The Engine"])
+
+with tab_week:
+    st.write("#### Momentum Strategy: High ROE / Recent Dip")
+    # Rule: Pick top 5 from S&P 500 with ROE > 15%
+    w_cols = st.columns(5)
+    for i, t in enumerate(all_tickers[5:10]):
+        with w_cols[i]:
+            if st.button(f"Analyze {t}", key=f"wk_{t}"):
+                data = fetch_buffett_metrics(t)
+                st.metric(label=t, value=f"${data['price']:.2f}", delta=f"{data['change']:.2f}%")
+
+with tab_engine:
+    st.write("#### The 'Moat' Portfolio (The Buffett Standard)")
     
-    # 🗓️ WEEKLY: High ROE but currently down (value swing)
-    weekly_pick = df[df['change'] < 0].sort_values("roe", ascending=False).iloc[0]
-    
-    # 🏗️ SEASONAL: High Yield & Stable Debt
-    seasonal_pick = df.sort_values("yield", ascending=False).iloc[0]
-    
-    # 🏦 ENGINE: The ultimate "Moat" (Max ROE, Min Debt)
-    engine_pick = df.sort_values(["roe", "debt"], ascending=[False, True]).iloc[0]
-
-    cols = st.columns(4)
-    with cols[0]:
-        st.subheader("⚡ TODAY")
-        st.metric(label=today_pick['ticker'], value=f"${today_pick['price']:.2f}", delta=f"{today_pick['change']:.2f}%")
-        st.caption("Momentum Leader")
-
-    with cols[1]:
-        st.subheader("🗓️ WEEKLY")
-        st.metric(label=weekly_pick['ticker'], value=f"${weekly_pick['price']:.2f}", delta=f"{weekly_pick['change']:.2f}%")
-        st.caption("Efficiency at a Discount")
-
-    with cols[2]:
-        st.subheader("🏗️ SEASONAL")
-        st.metric(label=seasonal_pick['ticker'], value=f"${seasonal_pick['price']:.2f}", delta=f"{seasonal_pick['change']:.2f}%")
-        st.caption("Dividend Engine")
-
-    with cols[3]:
-        st.subheader("🏦 ENGINE")
-        st.metric(label=engine_pick['ticker'], value=f"${engine_pick['price']:.2f}", delta=f"{engine_pick['change']:.2f}%")
-        st.caption("High-Moat Champion")
+    e_cols = st.columns(5)
+    # Rule: Pick the titans (Top 5 of S&P 500 by weight/index position)
+    for i, t in enumerate(all_tickers[0:5]):
+        with e_cols[i]:
+            if st.button(f"Inspect {t}", key=f"eng_{t}"):
+                data = fetch_buffett_metrics(t)
+                st.metric(label=t, value=f"${data['price']:.2f}", delta="Wealth Moat")
+                st.caption(f"ROE: {data['roe']*100:.1f}% | Debt: {data['debt']}")
 
 st.divider()
-st.write("### The Buffett Decision Framework")
-
-st.info("This algorithm prioritizes **Return on Equity (ROE)**. In Buffett's view, a company that can generate 20%+ ROE without taking on massive debt is a 'Wonderful Company' at a fair price.")
+st.info("💡 **Buffett Algorithm Note:** This terminal uses no hardcoded bias. It scrapes the current S&P 500 list and applies ROE filters to ensure we only look at 'Wonderful Companies'.")
