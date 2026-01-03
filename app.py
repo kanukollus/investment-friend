@@ -5,7 +5,7 @@ import time
 
 # 1. SETUP
 st.set_page_config(page_title="2026 Advisor Terminal", layout="wide", page_icon="🚀")
-API_KEY = "YOUR_ALPHA_VANTAGE_KEY_HERE" # Put your key here
+API_KEY = "ZFVR5I30DHJS6MEV" # Put your key here
 
 st.markdown("""
     <style>
