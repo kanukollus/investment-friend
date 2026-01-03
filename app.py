@@ -2,49 +2,51 @@ import streamlit as st
 import pandas as pd
 import requests
 import plotly.graph_objects as go
-import time
 
-# 1. SETUP & THEME
-st.set_page_config(page_title="2026 Advisor Terminal", layout="wide")
+# 1. PAGE SETUP & ELITE CSS
+st.set_page_config(page_title="2026 Sovereign Terminal", layout="wide")
 API_KEY = "ZFVR5I30DHJS6MEV"
 
 st.markdown("""
     <style>
     .main { background-color: #0d1117; }
-    .stButton>button { width: 100%; border-radius: 4px; background-color: #21262d; border: 1px solid #30363d; color: #58a6ff; height: 2.2em; }
-    .stButton>button:hover { border-color: #58a6ff; color: white; }
-    .symbol-label { font-family: monospace; font-weight: bold; font-size: 1.1rem; color: #f0f6fc; }
-    .status-msg { font-size: 0.8rem; color: #8b949e; margin-top: -10px; }
+    /* Metric Card Styling */
+    [data-testid="stMetric"] {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        padding: 15px;
+        border-radius: 10px;
+    }
+    /* Tab Styling */
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #161b22;
+        border-radius: 5px 5px 0 0;
+        gap: 1px;
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+    .stTabs [aria-selected="true"] { background-color: #21262d; border-bottom: 2px solid #58a6ff; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DATA ENGINE WITH FAILOVER
-@st.cache_data(ttl=300) # 5-minute cache for speed
-def fetch_robust_data(ticker):
-    if API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE": return {"error": "Missing Key"}
-    
-    url = f'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={API_KEY}'
+# 2. DATA ENGINE
+@st.cache_data(ttl=600)
+def fetch_ticker_lite(ticker):
+    if API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE": return {"price": "0.00", "change": "0%", "up": True}
     try:
-        r = requests.get(url, timeout=5)
-        data = r.json()
-        
-        # Detect Throttling
-        if "Note" in data:
-            return {"error": "Throttled"}
-            
-        quote = data.get("Global Quote", {})
-        if not quote: return {"error": "No Data"}
-        
+        url = f'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={API_KEY}'
+        data = requests.get(url).json().get("Global Quote", {})
         return {
-            "price": f"${float(quote.get('05. price', 0)):,.2f}",
-            "change": quote.get("10. change percent", "0%"),
-            "up": "-" not in quote.get("10. change percent", "0"),
-            "error": None
+            "price": f"${float(data.get('05. price', 0)):,.2f}",
+            "change": data.get("10. change percent", "0%"),
+            "up": "-" not in data.get("10. change percent", "0")
         }
-    except:
-        return {"error": "Connection Timeout"}
+    except: return {"price": "Busy", "change": "0%", "up": True}
 
-# 3. THE 2026 ELITE LIST
+# 3. THE 2026 ELITE BUCKETS
 BUCKETS = {
     "⚡ TODAY": ["PLTR", "MU", "MRVL", "AMD", "RKLB"],
     "🗓️ WEEKLY": ["NVDA", "AVGO", "ANET", "WDC", "MSFT"],
@@ -52,28 +54,51 @@ BUCKETS = {
     "🏦 ENGINE": ["GOOGL", "TSM", "ASML", "AAPL", "AMZN"]
 }
 
-# 4. APP UI
-st.title("🏛️ Senior Advisor Terminal")
-st.info("💡 **Pro Tip:** In Jan 2026, RKLB is trading near $76.00 after a 'Hold' upgrade. If the feed is busy, it's due to high retail volume.")
+# 4. HEADER
+st.title("🏛️ Sovereign Advisor Terminal")
+st.markdown("<p style='color: #8b949e;'>Portfolio Intelligence | Cycle: Agentic AI Integration</p>", unsafe_allow_html=True)
 
-cols = st.columns(4)
-for i, (name, tickers) in enumerate(BUCKETS.items()):
-    with cols[i]:
-        st.write(f"#### {name}")
-        st.divider()
-        for t in tickers:
-            c1, c2 = st.columns([1, 1.5])
-            with c1:
-                st.markdown(f"<p style='margin-top:5px;'><span class='symbol-label'>{t}</span></p>", unsafe_allow_html=True)
-            with c2:
-                if st.button("Details", key=f"btn_{t}"):
-                    data = fetch_robust_data(t)
-                    if data.get("error") == "Throttled":
-                        st.warning("Feed Busy. Retrying in 5s...")
-                        time.sleep(2)
-                        st.rerun()
-                    elif not data.get("error"):
-                        clr = "#3fb950" if data['up'] else "#f85149"
-                        st.markdown(f"<div style='color:{clr}; font-weight:bold;'>{data['price']} | {data['change']}</div>", unsafe_allow_html=True)
-                    else:
-                        st.caption("Feed Offline")
+# 5. DEFAULT EXPANDED: TODAY (Horizontal Layout)
+st.write("### ⚡ Current Scalps (Today's Focus)")
+today_cols = st.columns(5)
+for idx, ticker in enumerate(BUCKETS["⚡ TODAY"]):
+    with today_cols[idx]:
+        data = fetch_ticker_lite(ticker)
+        st.metric(label=ticker, value=data['price'], delta=data['change'])
+        if st.button(f"Analyze {ticker}", key=f"today_{ticker}"):
+            st.session_state.active_ticker = ticker
+
+# 6. TABS FOR OTHER HORIZONS
+st.divider()
+tab_week, tab_season, tab_engine = st.tabs(["🗓️ Weekly Swings", "🏗️ Seasonal Macro", "🏦 The Engine (Long)"])
+
+with tab_week:
+    cols = st.columns(5)
+    for idx, t in enumerate(BUCKETS["🗓️ WEEKLY"]):
+        with cols[idx]:
+            if st.button(f"Load {t}", key=f"wk_{t}"):
+                data = fetch_ticker_lite(t)
+                st.metric(label=t, value=data['price'], delta=data['change'])
+                st.session_state.active_ticker = t
+
+with tab_season:
+    cols = st.columns(5)
+    for idx, t in enumerate(BUCKETS["🏗️ SEASONAL"]):
+        with cols[idx]:
+            if st.button(f"Load {t}", key=f"sn_{t}"):
+                data = fetch_ticker_lite(t)
+                st.metric(label=t, value=data['price'], delta=data['change'])
+                st.session_state.active_ticker = t
+
+with tab_engine:
+    cols = st.columns(5)
+    for idx, t in enumerate(BUCKETS["🏦 ENGINE"]):
+        with cols[idx]:
+            if st.button(f"Load {t}", key=f"eng_{t}"):
+                data = fetch_ticker_lite(t)
+                st.metric(label=t, value=data['price'], delta=data['change'])
+                st.session_state.active_ticker = t
+
+# 7. FOOTER BRIEFING
+st.divider()
+st.info("💡 **Advisor Strategy:** In 2026, we are watching **PLTR** (Palantir) as it becomes the 'Operating System' for autonomous business agents. It remains the anchor of our TODAY bucket.")
