@@ -1,106 +1,131 @@
 import streamlit as st
 import pandas as pd
+import yfinance as yf
 import requests
-import time
 
-# 1. PREMIUM TERMINAL CONFIG
-st.set_page_config(page_title="2026 Sovereign Intelligence", layout="wide")
-API_KEY = "ZFVR5I30DHJS6MEV" # Get a free key at alphavantage.co
-
+# 1. PAGE CONFIG & THEME
+st.set_page_config(page_title="2026 Sovereign AI Terminal", layout="wide")
 st.markdown("""
     <style>
     .main { background-color: #0b0e11; }
     [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 10px; }
     .strike-zone-card { background-color: #1c1c1c; border: 1px solid #30363d; padding: 12px; border-radius: 8px; margin-top: 10px; font-family: 'Courier New', monospace; font-size: 0.85rem; }
-    .advisor-brief { background-color: #0d141f; border-left: 4px solid #58a6ff; padding: 12px; border-radius: 4px; margin-top: 10px; font-size: 0.85rem; color: #c9d1d9; line-height: 1.4; }
+    .advisor-brief { background-color: #0d141f; border-left: 4px solid #58a6ff; padding: 12px; border-radius: 4px; margin-top: 10px; font-size: 0.85rem; color: #c9d1d9; }
     .val-entry { color: #58a6ff; font-weight: bold; }
     .val-target { color: #3fb950; font-weight: bold; }
     .val-stop { color: #f85149; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DYNAMIC DATA ENGINE (Safe Fetching)
+# 2. DYNAMIC CONTENT GENERATOR (The "Reasoning" Engine)
+def generate_dynamic_reasoning(ticker, change, price, name):
+    """Generates a briefing based on data patterns rather than hardcoded text."""
+    if change > 4:
+        return f"<b>{name}</b> is currently the market's <b>Momentum Alpha</b>. With a {change:.2f}% surge, it has broken above the primary pivot, indicating aggressive institutional accumulation."
+    elif change < -4:
+        return f"<b>{name}</b> is undergoing a <b>Technical Flush</b>. The -{abs(change):.2f}% drop suggests high-volume profit taking. Monitor the Entry (S1) level for a mean-reversion scalp opportunity."
+    elif abs(change) > 2:
+        return f"<b>{name}</b> is showing <b>Elevated Volatility</b>. Institutional flow is currently { 'Bullish' if change > 0 else 'Bearish' }. This is a high-probability day trade setup."
+    else:
+        return f"<b>{name}</b> is showing <b>Stable Consolidation</b>. It has been selected due to its high liquidity and position within the top-movers of the S&P 500."
+
+# 3. GLOBAL SCRAPER (Fetches S&P 500 dynamically)
+@st.cache_data(ttl=3600)
+def get_sp500_tickers():
+    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    # Added headers to look like a browser to prevent 403 blocks
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(url, headers=headers)
+    df = pd.read_html(response.text)[0]
+    return df[['Symbol', 'Security']].values.tolist()
+
 @st.cache_data(ttl=600)
-def fetch_alpha_data(symbol):
-    if API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE": return None
-    url = f'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={API_KEY}'
-    try:
-        # Retry Logic for Rate Limiting
-        for _ in range(3):
-            r = requests.get(url).json()
-            if "Global Quote" in r:
-                data = r["Global Quote"]
-                p = float(data.get("05. price", 0))
-                h = float(data.get("03. high", p))
-                l = float(data.get("04. low", p))
-                c = float(data.get("08. previous close", p))
-                
-                # Pivot Math
-                piv = (h + l + c) / 3
-                return {
-                    "price": p, "change": data.get("10. change percent", "0%"),
-                    "entry": (2 * piv) - h, "target": (2 * piv) - l, "stop": ((2 * piv) - h) * 0.985
-                }
-            time.sleep(1) # Wait if throttled
-        return None
-    except: return None
-
-# 3. DYNAMIC BUCKET LOGIC (Jan 2026 Context)
-# Instead of hardcoding, we pull the Top 5 Actives as of Jan 3rd News
-ACTIVE_UNIVERSE = ["MU", "SNDK", "WDC", "NVDA", "PLTR"] 
-
-ADVISOR_NOTES = {
-    "MU": "<b>2026 Catalyst:</b> Leading memory play. Bernstein raised target to $330; HBM4 demand accelerating.",
-    "NVDA": "<b>2026 Catalyst:</b> Momentum ahead of Jan 5th Keynote. High-performance compute demand remains secular leader.",
-    "PLTR": "<b>Trend:</b> Deep 5.6% flush on Jan 2nd. Watch for entry at support levels for high-beta scalp.",
-    "WDC": "<b>Momentum:</b> Storage rotation play. Up 8.9% as institutional flows shift from compute to storage infra.",
-    "SNDK": "<b>Alert:</b> Leading S&P 500 gainer (+15.9%). Highly overextended; wait for pullback to Entry (S1)."
-}
+def fetch_top_movers(ticker_list):
+    """Scans the top of the index to find the 5 most volatile stocks."""
+    results = []
+    # Scan the first 50 titans (largest by index weight) to stay within API limits
+    for symbol, name in ticker_list[:50]:
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="2d")
+            if len(hist) < 2: continue
+            
+            p_curr = hist['Close'].iloc[-1]
+            p_prev = hist['Close'].iloc[-2]
+            change = ((p_curr - p_prev) / p_prev) * 100
+            
+            # Pivot Math
+            pivot = (hist['High'].iloc[-2] + hist['Low'].iloc[-2] + p_prev) / 3
+            r1 = (2 * pivot) - hist['Low'].iloc[-2]
+            s1 = (2 * pivot) - hist['High'].iloc[-2]
+            
+            results.append({
+                "symbol": symbol, "name": name, "price": p_curr, "change": change,
+                "entry": s1, "target": r1, "stop": s1 * 0.985, "over": p_curr > r1
+            })
+        except: continue
+    # Dynamic Sort: Highest Absolute Change (The 'Active' Stocks)
+    return sorted(results, key=lambda x: abs(x['change']), reverse=True)[:5]
 
 # 4. DASHBOARD UI
-st.title("🏛️ Sovereign Intelligence Terminal")
-st.write("### ⚡ Live Momentum Leaders & Tactical Briefing")
+st.title("🏛️ Sovereign Pure-Dynamic Terminal")
+st.write("### ⚡ Today's Momentum Leaders (Algorithmic Selection)")
+
+with st.spinner("Scraping S&P 500 and Ranking Volatility..."):
+    sp500 = get_sp500_tickers()
+    leaders = fetch_top_movers(sp500)
 
 cols = st.columns(5)
-for i, symbol in enumerate(ACTIVE_UNIVERSE):
+for i, stock in enumerate(leaders):
     with cols[i]:
-        data = fetch_alpha_data(symbol)
-        if data:
-            is_over = data['price'] > data['target']
-            status = "OVEREXTENDED" if is_over else "STRIKE ZONE"
-            p_clr = "#f85149" if is_over else "#3fb950"
-            
-            st.metric(label=symbol, value=f"${data['price']:.2f}", delta=data['change'])
-            st.markdown(f"""
-                <div class="strike-zone-card">
-                    <span style="color:{p_clr}; font-size:0.7rem; font-weight:bold;">{status}</span><br>
-                    <span class="val-entry">Entry: ${data['entry']:.2f}</span><br>
-                    <span class="val-target">Target: ${data['target']:.2f}</span><br>
-                    <span class="val-stop">Stop: ${data['stop']:.2f}</span>
-                </div>
-                <div class="advisor-brief">{ADVISOR_NOTES.get(symbol, "Monitor volatility for entry.")}</div>
-            """, unsafe_allow_html=True)
-        else:
-            st.warning(f"Feed {symbol} Busy")
+        status = "OVEREXTENDED" if stock['over'] else "STRIKE ZONE"
+        p_color = "#f85149" if stock['over'] else "#3fb950"
+        
+        st.metric(label=stock['symbol'], value=f"${stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
+        
+        # Tactical Box
+        st.markdown(f"""
+            <div class="strike-zone-card">
+                <span style="color:{p_color}; font-size:0.7rem; font-weight:bold;">{status}</span><br>
+                <span class="val-entry">Entry: ${stock['entry']:.2f}</span><br>
+                <span class="val-target">Target: ${stock['target']:.2f}</span><br>
+                <span class="val-stop">Stop: ${stock['stop']:.2f}</span>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        # Reasoning Box (Dynamic Reasoning)
+        reasoning = generate_dynamic_reasoning(stock['symbol'], stock['change'], stock['price'], stock['name'])
+        st.markdown(f"<div class='advisor-brief'>{reasoning}</div>", unsafe_allow_html=True)
 
 st.divider()
 
-# 5. CUSTOM SEARCH
+# 5. UNIVERSAL SEARCH (Zero Constraints)
 st.write("### 🔍 Strategic Asset Search")
-query = st.text_input("Deep-Dive any ticker:").upper()
+query = st.text_input("Analyze any ticker in the world:").upper()
 if query:
-    q_data = fetch_alpha_data(query)
-    if q_data:
-        c1, c2 = st.columns([1, 2])
-        with c1: st.metric(label=query, value=f"${q_data['price']:.2f}", delta=q_data['change'])
-        with c2:
-            st.markdown(f"""
-                <div class="strike-zone-card" style="font-size:1.1rem; padding:20px;">
-                    <span class="val-entry">Strategic Entry: ${q_data['entry']:.2f}</span> | 
-                    <span class="val-target">Profit Target: ${q_data['target']:.2f}</span>
-                </div>
-                <div class="advisor-brief" style="font-size:1rem;">
-                    <b>2026 Scraper Analysis:</b> Institutional volume in {query} is elevated. 
-                    Targeting {q_data['target']:.2f} for short-term profit capture.
-                </div>
-            """, unsafe_allow_html=True)
+    try:
+        q_ticker = yf.Ticker(query)
+        q_h = q_ticker.history(period="2d")
+        q_info = q_ticker.info
+        if not q_h.empty:
+            p = q_h['Close'].iloc[-1]
+            prev = q_h['Close'].iloc[-2]
+            c = ((p - prev) / prev) * 100
+            piv = (q_h['High'].iloc[-2] + q_h['Low'].iloc[-2] + prev) / 3
+            s1 = (2 * piv) - q_h['High'].iloc[-2]
+            r1 = (2 * piv) - q_h['Low'].iloc[-2]
+            
+            c1, c2 = st.columns([1, 2])
+            with c1: st.metric(label=query, value=f"${p:.2f}", delta=f"{c:.2f}%")
+            with c2:
+                st.markdown(f"""
+                    <div class="strike-zone-card" style="font-size:1.1rem; padding:20px;">
+                        <span class="val-entry">Entry: ${s1:.2f}</span> | 
+                        <span class="val-target">Target: ${r1:.2f}</span> | 
+                        <span class="val-stop">Stop: ${s1*0.985:.2f}</span>
+                    </div>
+                """, unsafe_allow_html=True)
+                res = generate_dynamic_reasoning(query, c, p, q_info.get('longName', query))
+                st.markdown(f"<div class='advisor-brief'>{res}</div>", unsafe_allow_html=True)
+    except:
+        st.error("Ticker not found or data feed restricted.")
