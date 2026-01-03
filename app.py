@@ -4,72 +4,79 @@ import requests
 import time
 
 # 1. SETUP
-st.set_page_config(page_title="2026 Advisor Terminal", layout="wide")
-API_KEY = "ZFVR5I30DHJS6MEV"  # Use your key!
+st.set_page_config(page_title="2026 Advisor Terminal", layout="wide", page_icon="🚀")
+API_KEY = "YOUR_ALPHA_VANTAGE_KEY_HERE" # Put your key here
 
 st.markdown("""
     <style>
     .stMetric { background-color: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 10px; }
+    .stAlert { background-color: #1f2428; border: none; color: #58a6ff; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DATA ENGINE WITH COOLDOWN
+# 2. THE SEQUENTIAL DATA ENGINE
 @st.cache_data(ttl=600)
-def fetch_stock_data(ticker):
+def fetch_safe_data(ticker):
     if API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE":
-        return {"price": "0.00", "change": "0%", "error": "Missing API Key"}
+        return {"price": 0.0, "change": "0%", "error": "Enter API Key"}
+    
+    # We add a small delay to respect the '5 calls per minute' rule
+    time.sleep(1.2) 
     
     url = f'https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={API_KEY}'
     try:
-        response = requests.get(url)
-        data = response.json()
+        r = requests.get(url)
+        data = r.json()
         
-        # If we hit the rate limit (5 calls/min), Alpha Vantage returns a 'Note'
+        # Check for Rate Limit Note
         if "Note" in data:
-            return {"price": "0.00", "change": "0%", "error": "Rate Limit Hit"}
+            return {"price": 0.0, "change": "0%", "error": "Rate Limit (Wait 60s)"}
             
         quote = data.get("Global Quote", {})
-        if not quote:
-            return {"price": "0.00", "change": "0%", "error": "Ticker Not Found"}
+        if not quote or "05. price" not in quote:
+            return {"price": 0.0, "change": "0%", "error": "Ticker Busy"}
             
         return {
-            "price": quote.get("05. price", "0.00"),
+            "price": float(quote.get("05. price", 0)),
             "change": quote.get("10. change percent", "0.00%"),
             "error": None
         }
-    except Exception as e:
-        return {"price": "0.00", "change": "0%", "error": str(e)}
+    except Exception:
+        return {"price": 0.0, "change": "0%", "error": "Connection Lost"}
 
-# 3. STRATEGY
+# 3. PORTFOLIO STRATEGY
 STRATEGY = {
-    "TODAY": {"ticker": "MU", "desc": "Memory/AI Momentum"},
-    "WEEK": {"ticker": "NVDA", "desc": "GPU Dominance"},
-    "SEASON": {"ticker": "VRT", "desc": "Power Infrastructure"},
-    "ENGINE": {"ticker": "TSM", "desc": "Foundry Monopoly"}
+    "TODAY": {"ticker": "MU", "desc": "AI Memory Scalp"},
+    "WEEK": {"ticker": "NVDA", "desc": "GPU Infrastructure"},
+    "SEASON": {"ticker": "VRT", "symbol": "VRT", "desc": "Power/Cooling"},
+    "ENGINE": {"ticker": "TSM", "desc": "Foundry Moat"}
 }
 
-# 4. DASHBOARD
+# 4. DASHBOARD UI
 st.title("🏛️ Senior Advisor Terminal")
-st.write("Status: 🟢 **Aggressive Strategy Live** (Jan 2026)")
+st.info("Status: **Aggressive Strategy Mode** | Active 2026 Cycle")
+
+if API_KEY == "YOUR_ALPHA_VANTAGE_KEY_HERE":
+    st.warning("👈 Please paste your Alpha Vantage Key into the code to activate live data.")
 
 cols = st.columns(4)
 
 for i, (horizon, info) in enumerate(STRATEGY.items()):
     with cols[i]:
-        # Add a tiny 0.5s delay to prevent hitting the 5-calls-per-minute limit too fast
-        time.sleep(0.5) 
-        
-        data = fetch_stock_data(info['ticker'])
+        # Sequentially fetch data
+        data = fetch_safe_data(info['ticker'])
         
         st.subheader(horizon)
         if data['error']:
-            st.warning(f"{info['ticker']}: {data['error']}")
+            st.error(f"{info['ticker']}: {data['error']}")
             st.metric(label=info['ticker'], value="---", delta="Paused")
         else:
-            price_val = float(data['price'])
-            st.metric(label=info['ticker'], value=f"${price_val:,.2f}", delta=data['change'])
+            st.metric(label=info['ticker'], value=f"${data['price']:,.2f}", delta=data['change'])
         
         st.caption(info['desc'])
 
+# 5. THE MANUAL REBOOT (To Clear 'Zeroes')
 st.divider()
-st.info("💡 **Advisor Tip:** If you see 'Rate Limit Hit', wait 60 seconds and refresh. The free Alpha Vantage key allows 5 checks per minute.")
+if st.button("🔄 Force Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
