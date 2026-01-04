@@ -11,36 +11,33 @@ st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. Global Stealth */
+    /* Global UI Stealth & Contrast */
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
     .stApp { background-color: #0d1117 !important; color: #FFFFFF !important; }
     
-    /* 2. FIX: Universe & Radio Label Visibility (Resolves IMG_3191.jpg/IMG_3194.jpg) */
-    div[data-testid="stWidgetLabel"] p { color: #FFFFFF !important; font-size: 1rem !important; font-weight: 600 !important; }
-    [data-testid="stMarkdownContainer"] p { color: #FFFFFF !important; }
-    
-    /* 3. FIX: Radio Options (S&P 500 / Nifty 50) Contrast */
-    div[data-testid="stRadio"] label { color: #FFFFFF !important; font-weight: 500 !important; }
-
-    /* 4. FIX: Search Bar & Chat Input Labels */
+    /* Universe & Search Visibility (v66 Fixed) */
+    div[data-testid="stWidgetLabel"] p { color: #FFFFFF !important; font-weight: 600 !important; }
+    div[data-testid="stRadio"] label { color: #FFFFFF !important; }
     div[data-testid="stTextInput"] label p { color: #58a6ff !important; font-weight: bold !important; }
     
-    /* 5. Menu & Tab Visibility */
+    /* Menu & Tab Visibility */
     button[data-baseweb="tab"] { color: #8b949e !important; }
     button[data-baseweb="tab"][aria-selected="true"] { color: #58a6ff !important; border-bottom-color: #58a6ff !important; }
     
-    /* 6. Button Visibility */
+    /* BUTTON INTERACTION FIX */
     div[data-testid="stButton"] button {
         background-color: #1f2937 !important; 
         color: #FFFFFF !important;
         border: 1px solid #30363d !important;
+        font-weight: 600 !important;
+        width: 100% !important;
+        cursor: pointer !important;
     }
 
-    /* 7. Tactical Metrics */
+    /* Tactical Metrics */
     [data-testid="stMetric"] { background-color: #161b22 !important; border: 1px solid #30363d !important; border-radius: 12px; }
     [data-testid="stMetricValue"] { color: #FFFFFF !important; font-weight: 700 !important; }
-    [data-testid="stMetricLabel"] { color: #8b949e !important; }
-
+    
     .strike-zone-card { 
         background-color: #0d1117; 
         border: 1px solid #30363d; 
@@ -52,7 +49,7 @@ st.markdown("""
     .val-entry { color: #58a6ff !important; }
     .val-target { color: #3fb950 !important; }
 
-    /* 8. Institutional Disclaimer */
+    /* Disclaimer High Contrast Red */
     .disclaimer-box { 
         background-color: #1c1c1c !important; 
         border: 1px solid #f85149 !important; 
@@ -61,14 +58,14 @@ st.markdown("""
         color: #f85149 !important; 
         margin-top: 40px !important;
         text-align: center !important;
-        font-weight: bold !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GLOBAL STATE ---
+# --- 2. GLOBAL STATE (Interaction Guard) ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
+if "suggested_query" not in st.session_state: st.session_state.suggested_query = None
 
 # --- 3. DYNAMIC MODEL DISCOVERY ---
 @st.cache_data(ttl=3600)
@@ -103,8 +100,6 @@ def rank_movers(universe):
 
 # --- 5. INTERFACE ---
 st.title("🏛️ Sovereign Terminal")
-
-# Universe Control - High Contrast
 exch = st.radio("Universe Selection:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
 tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
@@ -121,7 +116,6 @@ with tab_t:
         st.session_state.current_context = leader_ctx
     
     st.divider()
-    # Strategic Search - High Contrast Label
     search = st.text_input("Strategic Search (Ticker):", key=f"s_{exch}").strip().upper()
     if search:
         api_key = st.secrets.get("GEMINI_API_KEY")
@@ -133,36 +127,54 @@ with tab_t:
                 st.metric(label=search, value=f"{curr}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
                 st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr}{(2*piv)-hi:.2f}</span> | <span class='val-target'>Target: {curr}{(2*piv)-lo:.2f}</span></div>", unsafe_allow_html=True)
                 if api_key:
-                    with st.spinner(f"🧠 Advisor thinking about {search}..."):
+                    with st.spinner(f"🧠 Advisor processing {search}..."):
                         model = genai.GenerativeModel(get_working_model(api_key))
                         thesis = model.generate_content(f"3-point bull thesis for {search}").text
                         st.markdown(f"### 📈 Thesis: {search}")
                         st.markdown(f"<div class='strike-zone-card'>{thesis}</div>", unsafe_allow_html=True)
-        except: st.error("Search Feed Offline.")
+        except: st.error("Ticker offline.")
 
 with tab_r:
     api_key = st.secrets.get("GEMINI_API_KEY")
-    if st.button("🗑️ Reset Chat"): st.session_state.messages = []; st.rerun()
+    if st.button("🗑️ Reset Chat", key="clear_chat_btn"): 
+        st.session_state.messages = []
+        st.session_state.suggested_query = None
+        st.rerun()
     
-    s_cols = st.columns(3); clicked = None
-    for idx, s in enumerate(["Analyze Movers", "Strike Zones", "Market Trend"]):
-        if s_cols[idx].button(s, use_container_width=True): clicked = s
+    # 🏛️ INTERACTION FIX: Assigning specific keys to buttons
+    s_cols = st.columns(3)
+    s_list = ["Analyze Movers", "Strike Zones", "Market Trend"]
+    for idx, s in enumerate(s_list):
+        if s_cols[idx].button(s, key=f"s_btn_{idx}", use_container_width=True): 
+            st.session_state.suggested_query = s
 
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.write(m["content"])
     
-    if prompt := st.chat_input("Ask Terminal..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.write(prompt)
+    chat_prompt = st.chat_input("Ask Terminal...")
+    
+    # Logic to capture either the button click or the manual input
+    final_q = st.session_state.suggested_query if st.session_state.suggested_query else chat_prompt
+
+    if final_q:
+        st.session_state.messages.append({"role": "user", "content": final_q})
+        # Clear the suggestion immediately so it doesn't loop
+        st.session_state.suggested_query = None
+        with st.chat_message("user"): st.write(final_q)
         with st.chat_message("assistant"):
             with st.spinner("🧠 Intelligence Processing..."):
                 model = genai.GenerativeModel(get_working_model(api_key))
-                ans = model.generate_content(f"Context: {st.session_state.current_context}\nQ: {prompt}").text
+                ans = model.generate_content(f"Context: {st.session_state.current_context}\nQ: {final_q}").text
                 st.markdown(ans); st.session_state.messages.append({"role": "assistant", "content": ans})
+        st.rerun() # Refresh to update chat display
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol (v66.0)")
-    st.markdown("* **Contrast Guard:** Locks high-contrast white and blue for labels, radio options, and search headers.\n* **Fluid UI:** Fixed white-on-white text issues reported in mobile screenshots.\n* **Billing Tier:** Optimized for professional quotas (2,000 RPM).")
+    st.write("### 📜 Sovereign Protocol (v67.0)")
+    st.markdown("""
+    * **Interaction Guard:** Assigned unique persistent keys to all buttons to fix unclickable UI issues.
+    * **State Refresh:** Implemented a targeted `st.rerun()` loop to ensure the chat history updates instantly.
+    * **Contrast Lock:** Maintained high-contrast white/blue labels for all tactical inputs.
+    """)
 
 # --- GLOBAL DISCLAIMER ---
 st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Financial trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
