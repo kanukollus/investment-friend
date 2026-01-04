@@ -22,36 +22,35 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SESSION STATE ---
+# --- 2. GLOBAL STATE GUARD ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 
-# --- 3. PROFESSIONAL AI HANDLER (Tier 1 Optimized) ---
-def get_pro_model(api_key):
+# --- 3. VEDIC DYNAMIC MODEL DISCOVERY (The Permanent Fix for 404) ---
+@st.cache_data(ttl=3600)
+def get_working_model(api_key):
     genai.configure(api_key=api_key)
-    # Professional Tier allows for 1.5-Pro or Flash with massive quotas
-    return "models/gemini-1.5-flash"
-
-def generate_justification(ticker, price, api_key):
-    """Generates a professional 3-point justification like the Alphabet example."""
-    model_name = get_pro_model(api_key)
-    model = genai.GenerativeModel(model_name)
-    
-    prompt = f"""
-    Act as a Senior Equity Analyst. Provide a concise 'Investment Thesis' for {ticker} trading at ${price}.
-    Structure it as:
-    1. Market Dominance/Moat.
-    2. Operational Efficiency.
-    3. Future Growth Catalyst.
-    Keep it strictly professional and data-driven.
-    """
     try:
-        response = model.generate_content(prompt)
-        return response.text if response and hasattr(response, 'text') else "Analysis unavailable."
-    except Exception as e:
-        return f"🚨 Analysis Offline: {str(e)}"
+        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Professional Tier Choice: 1.5-Flash is most stable
+        if 'models/gemini-1.5-flash' in available: return 'models/gemini-1.5-flash'
+        if 'models/gemini-1.5-flash-latest' in available: return 'models/gemini-1.5-flash-latest'
+        return available[0]
+    except Exception:
+        return "models/gemini-1.5-flash"
 
-# --- 4. DATA ENGINE (v31.0 Base) ---
+# --- 4. RESILIENT AI HANDLER ---
+def handle_ai_query(prompt, context, api_key):
+    model_name = get_working_model(api_key)
+    model = genai.GenerativeModel(model_name)
+    try:
+        full_prompt = f"Market Data: {context[:400]}\nQuery: {prompt}"
+        response = model.generate_content(full_prompt)
+        return response.text if response and hasattr(response, 'text') else "⚠️ No response generated."
+    except Exception as e:
+        return f"🚨 RAW ERROR: {str(e)}"
+
+# --- 5. DATA ENGINE ---
 @st.cache_data(ttl=600)
 def rank_movers(universe):
     idx = 1 if "India" in universe else 0
@@ -72,13 +71,13 @@ def rank_movers(universe):
         return pd.DataFrame(res).sort_values(by='abs', ascending=False).head(5).to_dict('records')
     except: return []
 
-# --- 5. INTERFACE ---
+# --- 6. MAIN UI ---
 st.title("🏛️ Sovereign Intelligence Terminal")
-
 exch = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
-tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
 
-with tab_t:
+tab_tactical, tab_research, tab_about = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
+
+with tab_tactical:
     leaders = rank_movers(exch)
     curr = "₹" if "India" in exch else "$"
     if leaders:
@@ -102,37 +101,43 @@ with tab_t:
                 piv = (hi + lo + prev) / 3
                 st.metric(label=search, value=f"{curr}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
                 st.markdown(f"<div class='strike-zone-card'>Entry: {curr}{(2*piv)-hi:.2f} | Target: {curr}{(2*piv)-lo:.2f}</div>", unsafe_allow_html=True)
-                
-                # PROFESSIONAL JUSTIFICATION BLOCK
                 if api_key:
-                    with st.spinner(f"Generating thesis for {search}..."):
-                        thesis = generate_justification(search, p, api_key)
-                        st.markdown(f"### 📈 Investment Thesis: {search}")
+                    with st.spinner("Generating Thesis..."):
+                        thesis = handle_ai_query(f"Provide 3-point bullish thesis for {search}", "", api_key)
+                        st.markdown(f"### 📈 Thesis: {search}")
                         st.markdown(f"<div class='thesis-box'>{thesis}</div>", unsafe_allow_html=True)
-            else: st.error("Ticker not found.")
-        except: st.error("Data offline.")
+        except: st.error("Search failed.")
 
-with tab_r:
+with tab_research:
     api_key = st.secrets.get("GEMINI_API_KEY")
-    if st.button("🗑️ Reset Intelligence"): st.session_state.messages = []; st.rerun()
+    if st.button("🗑️ Clear Intelligence"): st.session_state.messages = []; st.rerun()
+
+    # 🏛️ RESTORED: AI SUGGESTIONS
+    suggestions = ["Analyze current leaders", "Identify Strike Zones", "Market Rationale"]
+    s_cols = st.columns(3); clicked_s = None
+    for idx, s in enumerate(suggestions):
+        if s_cols[idx].button(s, use_container_width=True): clicked_s = s
+
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.write(m["content"])
-    if prompt := st.chat_input("Ask Terminal..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.write(prompt)
+    
+    prompt = st.chat_input("Ask Terminal...")
+    final_query = clicked_s if clicked_s else prompt
+
+    if final_query:
+        st.session_state.messages.append({"role": "user", "content": final_query})
+        with st.chat_message("user"): st.write(final_query)
         with st.chat_message("assistant"):
-            model = genai.GenerativeModel("models/gemini-1.5-flash")
-            ans = model.generate_content(f"Market: {st.session_state.current_context}\nQuery: {prompt}").text
-            st.markdown(ans)
-            st.session_state.messages.append({"role": "assistant", "content": ans})
+            if not api_key: st.error("API Key Missing.")
+            else:
+                ans = handle_ai_query(final_query, st.session_state.current_context, api_key)
+                st.markdown(ans)
+                st.session_state.messages.append({"role": "assistant", "content": ans})
 
-with tab_a:
-    st.write("### 🏛️ Sovereign Protocol & Intelligence (v59.0)")
+with tab_about:
+    st.write("### 🏛️ Sovereign Protocol & Stability (v60.0)")
     st.markdown("""
-    * **Tier 1 Scaling:** Billing-enabled account architecture unlocks **2,000 requests per minute**.
-    * **Justification Engine:** Integrated fundamental investment theses for searched tickers.
-    * **Strategic Search:** Universal ticker search with $S1/R1$ Pivot Math.
-    * **State Persistence:** Session guards prevent crash errors during refreshes.
+    * **404 Suppression:** Fixed hardcoded model strings to use dynamic discovery.
+    * **AI Suggestions:** Restored button-based research shortcuts.
+    * **Billing Tier:** Optimized for professional quotas (2,000 RPM).
     """)
-
-st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. You are solely responsible for your financial decisions.</div>""", unsafe_allow_html=True)
