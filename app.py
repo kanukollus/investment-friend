@@ -24,27 +24,25 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SESSION STATE & REGRESSION CHECK ---
+# --- 2. SESSION STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 
-# --- 3. STABLE AI HANDLER (Backoff + Quota Protection) ---
+# --- 3. STABLE AI HANDLER ---
 def handle_ai_query(prompt, context, key):
     genai.configure(api_key=key)
-    # Architectural Change: Immediate retry with Exponential Backoff
     for attempt in range(3):
         try:
             model = genai.GenerativeModel('gemini-1.5-flash')
-            # Minimize tokens to avoid TPM (Tokens Per Minute) caps
             response = model.generate_content(f"Context: {context[:300]}\nUser: {prompt}")
             return response.text
         except Exception as e:
             if "429" in str(e):
-                time.sleep(2 ** attempt) # Wait 1s, 2s, 4s
+                time.sleep(2 ** attempt)
                 continue
-            return "⚠️ Quota limited. Please wait 30s before clicking again."
+            return "⚠️ Quota limited. Please wait 30s."
 
-# --- 4. DATA ENGINE (v31.0 Base - Verified Stable) ---
+# --- 4. DATA ENGINE (v31.0 Base) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     idx = 1 if "India" in exchange_choice else 0
@@ -72,6 +70,8 @@ def rank_movers(exchange_choice):
 
 # --- 5. INTERFACE ---
 st.title("🏛️ Sovereign Intelligence Terminal")
+
+# Universe Switcher - Keyed to trigger refresh of lower elements
 exchange_choice = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
 tab_tactical, tab_research, tab_about = st.tabs(["⚡ Tactical", "🤖 AI Desk", "📜 About"])
@@ -90,13 +90,29 @@ with tab_tactical:
         st.session_state.current_context = leader_ctx
 
     st.divider()
-    search_q = st.text_input("Strategic Search (Ticker):").upper()
+    
+    # 🏛️ FIX: Key linked to exchange_choice so search clears on switch
+    search_q = st.text_input("Strategic Search (Ticker):", key=f"search_{exchange_choice}").upper()
+    
     if search_q:
         try:
             q_t = yf.Ticker(search_q); q_h = q_t.history(period="2d")
-            p = q_h['Close'].iloc[-1]
-            st.metric(label=search_q, value=f"{curr_sym}{p:.2f}")
-        except: st.error("Ticker not found.")
+            if not q_h.empty:
+                p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
+                piv = (hi + lo + prev) / 3
+                # 🏛️ FIX: Added Entry and Target Math to Search
+                e_price = (2*piv)-hi
+                t_price = (2*piv)-lo
+                
+                st.metric(label=search_q, value=f"{curr_sym}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
+                st.markdown(f"""
+                    <div class='strike-zone-card'>
+                        <span class='val-entry'>Entry: {curr_sym}{e_price:.2f}</span><br>
+                        <span class='val-target'>Target: {curr_sym}{t_price:.2f}</span>
+                    </div>
+                """, unsafe_allow_html=True)
+            else: st.error("No data found for this ticker.")
+        except: st.error("Strategic Feed Offline.")
 
 with tab_research:
     api_key = st.secrets.get("GEMINI_API_KEY")
@@ -105,13 +121,11 @@ with tab_research:
     with c2: 
         if st.button("🗑️ Clear Chat"): st.session_state.messages = []; st.rerun()
 
-    # REGRESSION FIX: Suggestions Restored
     suggestions = ["Analyze the leaders", "Define Strike Zone", "Market Trend?"]
     s_cols = st.columns(3)
     clicked = None
     for idx, s in enumerate(suggestions):
-        if s_cols[idx].button(s, use_container_width=True):
-            clicked = s
+        if s_cols[idx].button(s, use_container_width=True): clicked = s
 
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.write(m["content"])
@@ -137,13 +151,8 @@ with tab_about:
     #### ⚡ Tactical Features
     * **Dynamic Discovery:** Real-time scrape of S&P 500 and Nifty 50 indexes.
     * **Volatility Ranking:** Identifies movers by absolute magnitude of price energy.
-    * **Pivot Point Math:** Automated S1 (Entry) and R1 (Target) levels.
-    * **Global Toggle:** Switch between US ($) and India (₹) instantly.
-    
-    #### 🤖 AI Optimizations
-    * **Regression Check:** Validated restoration of AI Suggestions and Persistent Context.
-    * **Quota Protection:** Manual-trigger AI to conserve free-tier request limits.
-    * **Exponential Backoff:** System automatically retries on 429 errors with increasing delays.
+    * **Strategic Search:** Universal search with integrated **Pivot Point Math** (Entry/Target).
+    * **Auto-Clear:** UI state resets when switching between US and Indian universes.
     """)
 
 st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. <b>USER RESPONSIBILITY:</b> You are solely responsible for your financial decisions.</div>""", unsafe_allow_html=True)
