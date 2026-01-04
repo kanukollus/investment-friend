@@ -40,7 +40,8 @@ def handle_ai_query(prompt, context, key):
             if "429" in str(e):
                 time.sleep(2 ** attempt)
                 continue
-            return "⚠️ Quota limited. Please wait 30s."
+            # return "⚠️ Quota limited. Please wait 30s."
+            return e
 
 # --- 4. DATA ENGINE (v31.0 Base) ---
 @st.cache_data(ttl=600)
