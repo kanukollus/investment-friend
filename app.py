@@ -4,65 +4,64 @@ import yfinance as yf
 import requests
 import google.generativeai as genai
 import time
-from google.api_core import exceptions
 
-# --- 1. ARCHITECTURAL CONFIG & CONTRAST ENGINE ---
+# --- 1. ARCHITECTURAL CONFIG & LUMINANCE ENGINE ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* Global UI Stealth & Contrast */
+    /* 1. Global Stealth */
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
     .stApp { background-color: #0d1117 !important; color: #FFFFFF !important; }
     
-    /* Universe & Search Visibility (v66 Fixed) */
-    div[data-testid="stWidgetLabel"] p { color: #FFFFFF !important; font-weight: 600 !important; }
-    div[data-testid="stRadio"] label { color: #FFFFFF !important; }
-    div[data-testid="stTextInput"] label p { color: #58a6ff !important; font-weight: bold !important; }
-    
-    /* Menu & Tab Visibility */
-    button[data-baseweb="tab"] { color: #8b949e !important; }
-    button[data-baseweb="tab"][aria-selected="true"] { color: #58a6ff !important; border-bottom-color: #58a6ff !important; }
-    
-    /* BUTTON INTERACTION FIX */
-    div[data-testid="stButton"] button {
-        background-color: #1f2937 !important; 
-        color: #FFFFFF !important;
-        border: 1px solid #30363d !important;
-        font-weight: 600 !important;
-        width: 100% !important;
-        cursor: pointer !important;
+    /* 2. FIX: Radio Option Visibility (S&P / Nifty) */
+    div[data-testid="stRadio"] label p { 
+        color: rgba(255, 255, 255, 0.95) !important; 
+        font-weight: 700 !important; 
+        text-shadow: 0px 0px 1px #000;
     }
+    
+    /* 3. FIX: AI Response Visibility (Resolves Mobile Washout) */
+    [data-testid="stChatMessage"] { 
+        background-color: #161b22 !important; 
+        border: 1px solid #30363d !important;
+        color: #FFFFFF !important;
+        font-size: 1rem !important;
+    }
+    [data-testid="stChatMessage"] p { color: #FFFFFF !important; font-weight: 400 !important; }
 
-    /* Tactical Metrics */
+    /* 4. Strategic Search Label */
+    div[data-testid="stTextInput"] label p { color: #58a6ff !important; font-size: 1.1rem !important; }
+
+    /* 5. Metrics & Tactical Layout */
     [data-testid="stMetric"] { background-color: #161b22 !important; border: 1px solid #30363d !important; border-radius: 12px; }
-    [data-testid="stMetricValue"] { color: #FFFFFF !important; font-weight: 700 !important; }
+    [data-testid="stMetricValue"] { color: #FFFFFF !important; font-weight: 800 !important; }
     
     .strike-zone-card { 
-        background-color: #0d1117; 
-        border: 1px solid #30363d; 
+        background-color: #1f2937; 
+        border: 1px solid #4b5563; 
         padding: 12px; 
         border-radius: 8px; 
         margin-top: 8px;
-        font-family: monospace;
+        color: #FFFFFF !important;
     }
-    .val-entry { color: #58a6ff !important; }
-    .val-target { color: #3fb950 !important; }
+    .val-entry { color: #60a5fa !important; font-weight: bold; }
+    .val-target { color: #34d399 !important; font-weight: bold; }
 
-    /* Disclaimer High Contrast Red */
+    /* 6. Professional Disclaimer */
     .disclaimer-box { 
         background-color: #1c1c1c !important; 
-        border: 1px solid #f85149 !important; 
+        border: 1px solid #ef4444 !important; 
         padding: 15px !important; 
         border-radius: 8px !important; 
-        color: #f85149 !important; 
+        color: #f87171 !important; 
         margin-top: 40px !important;
-        text-align: center !important;
+        text-align: center;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GLOBAL STATE (Interaction Guard) ---
+# --- 2. GLOBAL STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 if "suggested_query" not in st.session_state: st.session_state.suggested_query = None
@@ -100,12 +99,13 @@ def rank_movers(universe):
 
 # --- 5. INTERFACE ---
 st.title("🏛️ Sovereign Terminal")
+
 exch = st.radio("Universe Selection:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
+leaders = rank_movers(exch)
 
 tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
 
 with tab_t:
-    leaders = rank_movers(exch)
     curr = "₹" if "India" in exch else "$"
     if leaders:
         leader_ctx = ""
@@ -137,44 +137,38 @@ with tab_t:
 with tab_r:
     api_key = st.secrets.get("GEMINI_API_KEY")
     if st.button("🗑️ Reset Chat", key="clear_chat_btn"): 
-        st.session_state.messages = []
-        st.session_state.suggested_query = None
-        st.rerun()
+        st.session_state.messages = []; st.session_state.suggested_query = None; st.rerun()
     
-    # 🏛️ INTERACTION FIX: Assigning specific keys to buttons
     s_cols = st.columns(3)
     s_list = ["Analyze Movers", "Strike Zones", "Market Trend"]
     for idx, s in enumerate(s_list):
         if s_cols[idx].button(s, key=f"s_btn_{idx}", use_container_width=True): 
             st.session_state.suggested_query = s
 
+    # RENDER Chat Messages with High-Contrast Box Styling
     for m in st.session_state.messages:
-        with st.chat_message(m["role"]): st.write(m["content"])
+        with st.chat_message(m["role"]): st.markdown(m["content"])
     
     chat_prompt = st.chat_input("Ask Terminal...")
-    
-    # Logic to capture either the button click or the manual input
     final_q = st.session_state.suggested_query if st.session_state.suggested_query else chat_prompt
 
     if final_q:
         st.session_state.messages.append({"role": "user", "content": final_q})
-        # Clear the suggestion immediately so it doesn't loop
         st.session_state.suggested_query = None
-        with st.chat_message("user"): st.write(final_q)
+        with st.chat_message("user"): st.markdown(final_q)
         with st.chat_message("assistant"):
             with st.spinner("🧠 Intelligence Processing..."):
                 model = genai.GenerativeModel(get_working_model(api_key))
                 ans = model.generate_content(f"Context: {st.session_state.current_context}\nQ: {final_q}").text
                 st.markdown(ans); st.session_state.messages.append({"role": "assistant", "content": ans})
-        st.rerun() # Refresh to update chat display
+        st.rerun()
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol (v67.0)")
+    st.write("### 📜 Sovereign Protocol (v69.0)")
     st.markdown("""
-    * **Interaction Guard:** Assigned unique persistent keys to all buttons to fix unclickable UI issues.
-    * **State Refresh:** Implemented a targeted `st.rerun()` loop to ensure the chat history updates instantly.
-    * **Contrast Lock:** Maintained high-contrast white/blue labels for all tactical inputs.
+    * **Luminance Guard:** Implemented high-contrast white text for radio labels and AI chat bubbles to prevent mobile washout.
+    * **Interaction Stability:** Maintained unique persistent keys to ensure Suggestion buttons remain clickable.
+    * **Pro Scaling:** Optimized for professional-tier billing (2,000 RPM).
     """)
 
-# --- GLOBAL DISCLAIMER ---
 st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Financial trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
