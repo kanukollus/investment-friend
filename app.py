@@ -24,50 +24,41 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. VEDIC MODEL DISCOVERY (The Fix) ---
+# --- 2. VEDIC MODEL DISCOVERY ---
 def get_working_model(api_key):
-    """Exactly like the Vedic app: Audits API to find a supported model."""
     genai.configure(api_key=api_key)
     try:
-        # Fetch all available models from the API
         available_models = [
             m.name for m in genai.list_models() 
             if 'generateContent' in m.supported_generation_methods
         ]
-        # Priority 1: Flash 1.5 (Standard)
-        if 'models/gemini-1.5-flash' in available_models:
-            return 'models/gemini-1.5-flash'
-        # Priority 2: Any 1.5 Flash variant
+        if 'models/gemini-1.5-flash' in available_models: return 'models/gemini-1.5-flash'
         for m in available_models:
             if 'flash' in m: return m
-        # Fallback: The first available content generator
         return available_models[0]
-    except Exception as e:
-        # Hard fallback if discovery fails
-        return "models/gemini-1.5-flash"
+    except: return "models/gemini-1.5-flash"
 
-# --- 3. SESSION STATE ---
-if "messages" not in st.session_state: st.session_state.messages = []
-if "current_context" not in st.session_state: st.session_state.current_context = ""
-
-# --- 4. STABLE AI HANDLER ---
+# --- 3. STABLE AI HANDLER (Fixed "None" Error) ---
 def handle_ai_query(prompt, context, key):
-    # Discovery step before every call (Vedic Logic)
     model_name = get_working_model(key)
-    
     for attempt in range(3):
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(f"Context: {context[:400]}\nUser: {prompt}")
-            return response.text
+            
+            # --- ARCHITECTURAL FIX: Explicitly return the text ---
+            if response and response.text:
+                return response.text
+            else:
+                return "⚠️ API returned an empty response. Please retry."
         except Exception as e:
             if "429" in str(e):
                 time.sleep(3 ** attempt)
                 continue
-            # return f"⚠️ Model Error: {str(e)[:50]}... Please check API key."
-            return e
+            return f"⚠️ Connection Error: {str(e)[:50]}..."
+    return "⚠️ Quota Exceeded. Please wait 60s."
 
-# --- 5. DATA ENGINE (v31.0 Base) ---
+# --- 4. DATA ENGINE (v31.0 Base) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     idx = 1 if "India" in exchange_choice else 0
@@ -93,7 +84,7 @@ def rank_movers(exchange_choice):
         return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
     except: return []
 
-# --- 6. INTERFACE ---
+# --- 5. INTERFACE ---
 st.title("🏛️ Sovereign Intelligence Terminal")
 exchange_choice = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
@@ -109,7 +100,7 @@ with tab_tactical:
             with cols[i]:
                 st.metric(label=stock['ticker'], value=f"{curr_sym}{stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
                 st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr_sym}{stock['entry']:.2f}</span><br><span class='val-target'>Target: {curr_sym}{stock['target']:.2f}</span></div>", unsafe_allow_html=True)
-                leader_ctx += f"{stock['ticker']}:{stock['price']};"
+                leader_ctx += f"{stock['ticker']}:{stock['price']}; "
         st.session_state.current_context = leader_ctx
 
     st.divider()
@@ -122,7 +113,7 @@ with tab_tactical:
                 piv = (hi + lo + prev) / 3
                 st.metric(label=search_q, value=f"{curr_sym}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
                 st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr_sym}{(2*piv)-hi:.2f}</span><br><span class='val-target'>Target: {curr_sym}{(2*piv)-lo:.2f}</span></div>", unsafe_allow_html=True)
-        except: st.error("Search Feed Offline.")
+        except: st.error("Ticker not found.")
 
 with tab_research:
     api_key = st.secrets.get("GEMINI_API_KEY")
@@ -158,9 +149,9 @@ with tab_about:
     **Sovereign Intelligence Terminal (v31.0 Base)**
     
     #### ⚡ Tactical Features
-    * **Vedic Model Discovery:** System automatically audits the API to find the correct `models/` identifier.
-    * **Strategic Search Logic:** Resetting search bar with integrated Entry/Target math.
-    * **Dynamic Discovery:** Real-time scrape of S&P 500 and Nifty 50.
+    * **Vedic Model Discovery:** Corrected model handshake for `v1beta` support.
+    * **Logic Restoration:** Fixed "None" return error in AI Research Desk.
+    * **Strategic Search:** Resetting search bar with integrated Entry/Target math.
     * **Institutional Math:** Automated Floor Trader Pivot Points ($S1$/$R1$).
     """)
 
