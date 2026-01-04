@@ -30,7 +30,6 @@ st.markdown("""
         }
     }
 
-    /* Fixed Strategic Result Box */
     .search-result-box {
         background-color: #1f2937;
         border: 1px solid #4b5563;
@@ -46,9 +45,15 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GLOBAL STATE ---
-if "messages" not in st.session_state: st.session_state.messages = []
-if "current_context" not in st.session_state: st.session_state.current_context = ""
+# --- 2. REINFORCED GLOBAL STATE GUARD (Fixes AttributeError) ---
+if "messages" not in st.session_state: 
+    st.session_state["messages"] = []
+if "current_context" not in st.session_state: 
+    st.session_state["current_context"] = ""
+if "suggested_query" not in st.session_state: 
+    st.session_state["suggested_query"] = None
+if "active_tab" not in st.session_state:
+    st.session_state["active_tab"] = 0
 
 # --- 3. AI & DATA ENGINES ---
 @st.cache_data(ttl=3600)
@@ -97,25 +102,22 @@ with tab_t:
         st.session_state.current_context = leader_ctx
     
     st.divider()
-    search = st.text_input("Strategic Search (Ticker):", key=f"s_{exch}").strip().upper()
+    search = st.text_input("Strategic Search (Ticker):", key=f"search_{exch}").strip().upper()
     if search:
         api_key = st.secrets.get("GEMINI_API_KEY")
         try:
             q_t = yf.Ticker(search); q_h = q_t.history(period="2d")
             if not q_h.empty:
-                # 🏛️ RE-CALCULATING PIVOTS FOR SEARCHED TICKER
-                p_close, prev_close, p_high, p_low = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
-                pivot_point = (p_high + p_low + prev_close) / 3
-                s1_entry = (2 * pivot_point) - p_high
-                r1_target = (2 * pivot_point) - p_low
+                p_c, prev_c, p_h, p_l = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
+                p_pt = (p_h + p_l + prev_c) / 3
+                s1_e = (2 * p_pt) - p_h
+                r1_t = (2 * p_pt) - p_l
                 
-                # 🏛️ FORCING VISIBILITY OF ENTRY/TARGET
-                st.metric(label=search, value=f"{curr}{p_close:.2f}", delta=f"{((p_close-prev_close)/prev_close)*100:.2f}%")
-                
+                st.metric(label=search, value=f"{curr}{p_c:.2f}", delta=f"{((p_c-prev_c)/prev_c)*100:.2f}%")
                 st.markdown(f"""
                 <div class="search-result-box">
-                    <span style="color:#58a6ff; font-weight:bold;">Entry ($S1$): {curr}{s1_entry:.2f}</span><br>
-                    <span style="color:#3fb950; font-weight:bold;">Target ($R1$): {curr}{r1_target:.2f}</span>
+                    <span style="color:#58a6ff; font-weight:bold;">Entry: {curr}{s1_e:.2f}</span><br>
+                    <span style="color:#3fb950; font-weight:bold;">Target: {curr}{r1_t:.2f}</span>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -125,13 +127,14 @@ with tab_t:
                         thesis = model.generate_content(f"3-point bull thesis for {search}").text
                         st.markdown(f"### 📈 Thesis: {search}")
                         st.markdown(f"<div style='background:#f6f8fa; border-left:4px solid #005cc5; padding:15px; color:#000000;'>{thesis}</div>", unsafe_allow_html=True)
-            else: st.error("Ticker not found in database.")
-        except: st.error("Strategic Feed Offline.")
+        except: st.error("Ticker offline.")
 
 with tab_r:
     api_key = st.secrets.get("GEMINI_API_KEY")
     if st.button("🗑️ Reset Chat", key="clear_chat_btn"): 
-        st.session_state.messages = []; st.rerun()
+        st.session_state.messages = []
+        st.session_state.suggested_query = None
+        st.rerun()
     
     s_cols = st.columns(3)
     s_list = ["Analyze Movers", "Strike Zones", "Market Trend"]
@@ -143,25 +146,27 @@ with tab_r:
         with st.chat_message(m["role"]): st.markdown(m["content"])
     
     chat_prompt = st.chat_input("Ask Terminal...")
-    final_q = st.session_state.suggested_query if st.session_state.suggested_query else chat_prompt
+    
+    # 🏛️ SAFE RETRIEVAL: Using .get() for dict-like access to session state
+    final_q = st.session_state.get("suggested_query") if st.session_state.get("suggested_query") else chat_prompt
 
     if final_q:
         st.session_state.messages.append({"role": "user", "content": final_q})
         st.session_state.suggested_query = None
         with st.chat_message("user"): st.markdown(final_q)
         with st.chat_message("assistant"):
-            with st.spinner("🧠 Intelligence Processing..."):
+            with st.spinner("🧠 Processing..."):
                 model = genai.GenerativeModel(get_working_model(api_key))
                 ans = model.generate_content(f"Context: {st.session_state.current_context}\nQ: {final_q}").text
                 st.markdown(ans); st.session_state.messages.append({"role": "assistant", "content": ans})
         st.rerun()
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol (v76.0)")
+    st.write("### 📜 Sovereign Protocol (v77.0)")
     st.markdown("""
-    * **Search Fix:** Explicitly re-calculates and displays $S1$ and $R1$ pivots for searched tickers.
-    * **Luminance fortress:** Webkit-text-fill rules prevent browser-forced color inversion.
-    * **Pro Tier Infrastructure:** Billing enabled for 2,000 RPM high-throughput analysis.
+    * **State Guard:** Explicitly initializes all `session_state` keys to prevent `AttributeError`.
+    * **Safe Retrieval:** Uses `.get()` methods for secondary state checks to handle race conditions.
+    * **Pivot Logic:** Retained precision $S1/R1$ calculations for tactical searches.
     """)
 
 st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Financial trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
