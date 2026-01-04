@@ -4,7 +4,7 @@ import yfinance as yf
 import requests
 import google.generativeai as genai
 
-# --- 1. ARCHITECTURAL CONFIG & EXTREME CONTRAST THEME ---
+# --- 1. ARCHITECTURAL CONFIG & CONTRAST LOCK ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
@@ -15,46 +15,40 @@ st.markdown("""
     /* 2. Desktop Mode (Dark) */
     .stApp { background-color: #0d1117; color: #FFFFFF; }
     
-    /* 3. MOBILE-ONLY "PAPER-WHITE" MODE (< 768px) */
+    /* 3. MOBILE CONTRAST OVERRIDE (< 768px) */
     @media (max-width: 768px) {
-        /* Force Solid White Background */
+        /* Force White Background */
         .stApp { background-color: #FFFFFF !important; color: #000000 !important; }
         
-        /* Force Universe/Radio Labels to Solid Black */
-        div[data-testid="stWidgetLabel"] p, div[data-testid="stRadio"] label { 
-            color: #000000 !important; 
-            font-weight: 900 !important; 
-            font-size: 1.1rem !important;
-            -webkit-text-fill-color: #000000 !important;
-        }
-
-        /* Force Tab Menu (Research Desk, Protocol) to Solid Black */
-        button[data-baseweb="tab"] { 
-            color: #444444 !important; 
-            font-weight: 700 !important;
-        }
-        button[data-baseweb="tab"][aria-selected="true"] { 
-            color: #000000 !important; 
-            border-bottom-color: #000000 !important; 
-        }
-
-        /* Force Metric Values to Solid Black */
-        div[data-testid="stMetricValue"] { 
-            color: #000000 !important; 
-            -webkit-text-fill-color: #000000 !important; 
+        /* FIX: Universal Search & Radio Labels (Black on White) */
+        div[data-testid="stWidgetLabel"] p, div[data-testid="stRadio"] label p { 
+            color: #111111 !important; 
             font-weight: 800 !important; 
+            -webkit-text-fill-color: #111111 !important;
         }
 
-        /* Force AI Response Visibility */
+        /* FIX: AI Suggestions (Dark Grey with Bright Blue Text) */
+        div[data-testid="stButton"] button {
+            background-color: #1f2937 !important;
+            color: #58a6ff !important;
+            border: 2px solid #111111 !important;
+            -webkit-text-fill-color: #58a6ff !important;
+            font-weight: bold !important;
+        }
+
+        /* FIX: AI Responses (Light Grey Bubble with Black Text) */
         [data-testid="stChatMessage"] { 
-            background-color: #f0f2f6 !important; 
-            border: 2px solid #000000 !important; 
+            background-color: #f8f9fa !important; 
+            border: 1px solid #dee2e6 !important; 
         }
         [data-testid="stChatMessage"] p { 
-            color: #000000 !important; 
-            -webkit-text-fill-color: #000000 !important; 
-            font-weight: 500 !important;
+            color: #111111 !important; 
+            -webkit-text-fill-color: #111111 !important; 
         }
+
+        /* Menu Tabs (Black on White) */
+        button[data-baseweb="tab"] { color: #555555 !important; }
+        button[data-baseweb="tab"][aria-selected="true"] { color: #000000 !important; border-bottom-color: #000000 !important; }
     }
 
     /* Standard Card Styling */
@@ -68,12 +62,12 @@ st.markdown("""
     }
     
     @media (max-width: 768px) {
-        .strike-zone-box { background-color: #eeeeee !important; border-color: #000000 !important; color: #000000 !important; }
+        .strike-zone-box { background-color: #f1f3f5 !important; border-color: #ced4da !important; color: #000000 !important; }
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GLOBAL STATE GUARD ---
+# --- 2. GLOBAL STATE ---
 if "messages" not in st.session_state: st.session_state["messages"] = []
 if "current_context" not in st.session_state: st.session_state["current_context"] = ""
 if "suggested_query" not in st.session_state: st.session_state["suggested_query"] = None
@@ -110,7 +104,7 @@ def rank_movers(universe):
 # --- 4. MAIN INTERFACE ---
 st.title("🏛️ Sovereign Terminal")
 
-# UNIVERSAL SELECTION LOCK
+# UNIVERSAL SELECTION
 exch = st.radio("Universe Selection:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 leaders = rank_movers(exch)
 
@@ -126,6 +120,26 @@ with tab_t:
             st.markdown(f"<div class='strike-zone-box'><b>Entry: {curr}{s['entry']:.2f} | Target: {curr}{s['target']:.2f}</b></div>", unsafe_allow_html=True)
             leader_ctx += f"{s['ticker']}:{s['price']}; "
         st.session_state["current_context"] = leader_ctx
+    
+    st.divider()
+    # SEARCH BAR
+    search = st.text_input("Strategic Search (Ticker):", key=f"search_{exch}").strip().upper()
+    if search:
+        api_key = st.secrets.get("GEMINI_API_KEY")
+        try:
+            q_t = yf.Ticker(search); q_h = q_t.history(period="2d")
+            if not q_h.empty:
+                p_c, prev_c, p_h, p_l = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
+                p_pt = (p_h + p_l + prev_c) / 3
+                st.metric(label=search, value=f"{curr}{p_c:.2f}", delta=f"{((p_c-prev_c)/prev_c)*100:.2f}%")
+                st.markdown(f'<div class="strike-zone-box"><b>Entry: {curr}{(2*p_pt)-p_h:.2f} | Target: {curr}{(2*p_pt)-p_l:.2f}</b></div>', unsafe_allow_html=True)
+                if api_key:
+                    with st.spinner("🧠 Advisor thinking..."):
+                        model = genai.GenerativeModel(get_working_model(api_key))
+                        thesis = model.generate_content(f"3-point bull thesis for {search}").text
+                        st.markdown(f"### 📈 Thesis: {search}")
+                        st.markdown(f"<div style='background:#f8f9fa; border-left:4px solid #58a6ff; padding:15px; color:#111111;'>{thesis}</div>", unsafe_allow_html=True)
+        except: st.error("Ticker offline.")
 
 with tab_r:
     api_key = st.secrets.get("GEMINI_API_KEY")
@@ -133,6 +147,7 @@ with tab_r:
         st.session_state["messages"] = []; st.session_state["suggested_query"] = None; st.rerun()
     
     s_cols = st.columns(3)
+    # AI SUGGESTIONS
     for idx, s in enumerate(["Analyze Movers", "Strike Zones", "Market Trend"]):
         if s_cols[idx].button(s, key=f"s_btn_{idx}", use_container_width=True): 
             st.session_state["suggested_query"] = s
@@ -155,10 +170,10 @@ with tab_r:
         st.rerun()
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol (v81.0)")
+    st.write("### 📜 Sovereign Protocol (v82.0)")
     st.markdown("""
-    **🏛️ Mobile Visibility Guard**
-    * **Paper-White Mode:** Forced white background/black text for mobile to ensure 100% legibility.
-    * **Menu Anchor:** Universe selection and tab labels (Research Desk, Protocol) are hard-locked to bold black.
-    * **Response Lock:** AI chat bubbles use hardware-level color fill to prevent invisible text bugs.
+    **🏛️ Visibility Audit**
+    * **Luminance Guard:** Fixed mobile 'Full Black' bug by separating background and text with Slate Grey borders.
+    * **AI Suggestions:** Switched to Bright Blue on Dark Grey for 100% legibility on mobile Light Mode.
+    * **Universal Search:** Forced bold labels for S&P/Nifty selection and Strategic Search.
     """)
