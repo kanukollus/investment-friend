@@ -10,15 +10,14 @@ st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* Global UI Stealth */
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
     
-    /* Desktop Defaults (Dark Mode) */
+    /* Desktop Mode (Dark) */
     .stApp { background-color: #0d1117; color: #FFFFFF; }
     div[data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; }
     div[data-testid="stButton"] button { background-color: #21262d; color: #58a6ff; border: 1px solid #30363d; }
 
-    /* MOBILE-ONLY "LIGHT MODE" OVERRIDE (< 768px) */
+    /* Mobile Mode (Light) Override */
     @media (max-width: 768px) {
         .stApp { background-color: #FFFFFF !important; color: #000000 !important; }
         div[data-testid="stWidgetLabel"] p, [data-testid="stMetricLabel"] { color: #000000 !important; font-weight: 700 !important; }
@@ -32,18 +31,11 @@ st.markdown("""
         }
         [data-testid="stChatMessage"] { background-color: #f0f2f6 !important; border: 1px solid #d0d7de !important; }
         [data-testid="stChatMessage"] p { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
-        div[data-testid="stTextInput"] label p { color: #005cc5 !important; }
     }
 
     .disclaimer-box { 
-        background-color: #1c1c1c; 
-        border: 1px solid #f85149; 
-        padding: 15px; 
-        border-radius: 8px; 
-        color: #f85149; 
-        margin-top: 40px; 
-        text-align: center;
-        font-weight: bold;
+        background-color: #1c1c1c; border: 1px solid #f85149; padding: 15px; 
+        border-radius: 8px; color: #f85149; margin-top: 40px; text-align: center; font-weight: bold;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -52,10 +44,9 @@ st.markdown("""
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 if "suggested_query" not in st.session_state: st.session_state.suggested_query = None
-# TAB PERSISTENCE: Track active tab to prevent jump
 if "active_tab" not in st.session_state: st.session_state.active_tab = 0
 
-# --- 3. DYNAMIC MODEL DISCOVERY ---
+# --- 3. AI ENGINE ---
 @st.cache_data(ttl=3600)
 def get_working_model(api_key):
     genai.configure(api_key=api_key)
@@ -91,12 +82,10 @@ st.title("🏛️ Sovereign Terminal")
 exch = st.radio("Universe Selection:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 leaders = rank_movers(exch)
 
-# 🏛️ TAB PERSISTENCE LOGIC
-tabs = ["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"]
-tab_t, tab_r, tab_a = st.tabs(tabs)
+tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
 
 with tab_t:
-    st.session_state.active_tab = 0 # Mark active tab
+    st.session_state.active_tab = 0
     curr = "₹" if "India" in exch else "$"
     if leaders:
         leader_ctx = ""
@@ -125,7 +114,7 @@ with tab_t:
         except: st.error("Ticker offline.")
 
 with tab_r:
-    st.session_state.active_tab = 1 # Mark active tab
+    st.session_state.active_tab = 1
     api_key = st.secrets.get("GEMINI_API_KEY")
     if st.button("🗑️ Reset Chat", key="clear_chat_btn"): 
         st.session_state.messages = []; st.session_state.suggested_query = None; st.rerun()
@@ -135,7 +124,7 @@ with tab_r:
     for idx, s in enumerate(s_list):
         if s_cols[idx].button(s, key=f"s_btn_{idx}", use_container_width=True): 
             st.session_state.suggested_query = s
-            st.rerun() # Force re-run to process click while staying on this tab
+            st.rerun()
 
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -148,15 +137,21 @@ with tab_r:
         st.session_state.suggested_query = None
         with st.chat_message("user"): st.markdown(final_q)
         with st.chat_message("assistant"):
-            with st.spinner("🧠 Intelligence Processing..."):
+            with st.spinner("🧠 Processing..."):
                 model = genai.GenerativeModel(get_working_model(api_key))
                 ans = model.generate_content(f"Context: {st.session_state.current_context}\nQ: {final_q}").text
                 st.markdown(ans); st.session_state.messages.append({"role": "assistant", "content": ans})
         st.rerun()
 
 with tab_a:
-    st.session_state.active_tab = 2 # Mark active tab
-    st.write("### 📜 Sovereign Protocol (v72.0)")
-    st.markdown("* **Tab Resilience:** Logic implemented to prevent "tab-jumping" during AI generation.\n* **Adaptive Contrast:** High-contrast light mode on mobile to prevent "Smart Inversion" bugs.\n* **Pro Tier:** Built for professional quotas (2,000 RPM).")
+    st.session_state.active_tab = 2
+    st.write("### 📜 Sovereign Protocol (v73.0)")
+    # FIXED: Triple quotes used for markdown string to prevent SyntaxError
+    st.markdown("""
+    * **Syntax Reset:** Fixed quote nesting to prevent SyntaxError on string literals.
+    * **Tab Resilience:** Persistence logic active to prevent 'tab-jumping' during AI generation.
+    * **Adaptive Contrast:** High-contrast light mode on mobile to prevent 'Smart Inversion' bugs.
+    * **Pro Tier:** Built for professional quotas (2,000 RPM).
+    """)
 
 st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
