@@ -5,6 +5,7 @@ import requests
 import google.generativeai as genai
 import time
 import random
+from google.api_core import exceptions
 
 # --- 1. ARCHITECTURAL CONFIG & THEME ---
 st.set_page_config(page_title="Sovereign Terminal | GT Edition", layout="wide")
@@ -40,26 +41,41 @@ def get_working_model(api_key):
     except Exception:
         return "models/gemini-1.5-flash"
 
-# --- 4. STABLE AI HANDLER ---
-def handle_ai_query(prompt, context, key):
-    model_name = get_working_model(key)
-    try:
-        model = genai.GenerativeModel(model_name)
-        response = model.generate_content(f"Context: {context[:400]}\nQuery: {prompt}")
-        if response and hasattr(response, 'text'):
-            return response.text
-        return "⚠️ Safety Trigger: Content blocked."
-    except Exception as e:
-        return f"🚨 RAW ERROR: {str(e)}"
+# --- 4. RESILIENT AI HANDLER (Integrated generate_with_retry) ---
+def generate_with_retry(prompt, context, api_key):
+    model_name = get_working_model(api_key)
+    model = genai.GenerativeModel(model_name)
+    
+    retries = 3
+    delay = 2  # Start with a 2-second delay
+
+    for i in range(retries):
+        try:
+            # Enhanced prompt with system context
+            full_prompt = f"Context Snapshot: {context[:300]}\nUser Request: {prompt}"
+            response = model.generate_content(full_prompt)
+            
+            if response and hasattr(response, 'text'):
+                return response.text
+            return "⚠️ Safety Filter: Content blocked by API."
+        
+        except exceptions.ResourceExhausted as e:
+            if i < retries - 1:
+                st.warning(f"Quota hit. Waiting {delay}s before retrying... (Attempt {i+1}/3)")
+                time.sleep(delay)
+                delay *= 2  # Exponential backoff
+            else:
+                return f"🚨 Max retries reached. Raw Error: {str(e)}"
+        except Exception as e:
+            return f"🚨 RAW ERROR: {str(e)}"
 
 # --- 5. DATA ENGINE (v31.0 Base) ---
 @st.cache_data(ttl=600)
 def rank_movers(universe):
     idx = 1 if "India" in universe else 0
     url = "https://en.wikipedia.org/wiki/NIFTY_50" if idx == 1 else "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        resp = requests.get(url, headers=headers)
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
         syms = pd.read_html(resp.text)[idx]['Symbol'].tolist()
         if idx == 1: syms = [s + ".NS" for s in syms]
         results = []
@@ -75,10 +91,9 @@ def rank_movers(universe):
     except: return []
 
 # --- 6. INTERFACE ---
-st.title("🏛️ Sovereign Terminal | Student Edition")
+st.title("🏛️ Sovereign Terminal | GT Edition")
 exch = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
-# FIXED: Standardized Variable Names for Tabs
 tab_tactical, tab_research, tab_about = st.tabs(["⚡ Tactical", "🤖 AI Research", "📜 About"])
 
 with tab_tactical:
@@ -102,7 +117,7 @@ with tab_tactical:
             p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
             piv = (hi + lo + prev) / 3
             st.metric(label=search, value=f"{sym}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
-            st.markdown(f"<div class='strike-zone-card'>Entry: {sym}{(2*piv)-hi:.2f} | Target: {sym}{(2*piv)-lo:.2f}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='strike-zone-card'>Entry: {curr}{(2*piv)-hi:.2f} | Target: {curr}{(2*piv)-lo:.2f}</div>", unsafe_allow_html=True)
         except: st.error("Ticker not found.")
 
 with tab_research:
@@ -112,7 +127,6 @@ with tab_research:
     with c2: 
         if st.button("🗑️ Clear Chat"): st.session_state.messages = []; st.rerun()
 
-    # RESTORED: Suggestions from v31.0
     suggestions = ["Analyze the leaders", "Define Strike Zone", "Trend Analysis"]
     s_cols = st.columns(3); clicked = None
     for idx, s in enumerate(suggestions):
@@ -130,17 +144,18 @@ with tab_research:
         with st.chat_message("assistant"):
             if not api_key: st.error("Missing API Key.")
             else:
-                ans = handle_ai_query(final_query, st.session_state.current_context, api_key)
-                st.markdown(f"<div class='advisor-brief'>{ans}</div>", unsafe_allow_html=True)
-                st.session_state.messages.append({"role": "assistant", "content": ans})
+                with st.spinner("Executing resilient AI request..."):
+                    ans = generate_with_retry(final_query, st.session_state.current_context, api_key)
+                    st.markdown(f"<div class='advisor-brief'>{ans}</div>", unsafe_allow_html=True)
+                    st.session_state.messages.append({"role": "assistant", "content": ans})
 
 with tab_about:
-    st.write("### 🏛️ Sovereign Protocol & Features (v54.0)")
+    st.write("### 🏛️ Sovereign Protocol & Features (v55.0)")
     st.markdown("""
-    * **Regression Fix:** Standardized tab variable naming to prevent NameError crashes.
+    * **Exponential Backoff:** Integrated student-provided retry logic to handle `ResourceExhausted` errors.
     * **Vedic Model Discovery:** System audits API aliases to find valid content generators.
-    * **Student Optimization:** Locks onto **Gemini 1.5 Flash** for high-quota student access (1,500 RPD).
-    * **Strategic Search:** Universal ticker search with integrated **Entry/Target math**.
+    * **Student Optimization:** Locked to **Gemini 1.5 Flash** for high-quota stability.
+    * **Whitelabel UI:** Standard features preserved (Strategic Search, Universe Clearing).
     """)
 
 st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. <b>USER RESPONSIBILITY:</b> GT students are solely responsible for their financial decisions.</div>""", unsafe_allow_html=True)
