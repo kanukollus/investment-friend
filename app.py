@@ -4,57 +4,60 @@ import yfinance as yf
 import requests
 import google.generativeai as genai
 
-# --- 1. ARCHITECTURAL CONFIG & ADAPTIVE THEME ---
+# --- 1. ARCHITECTURAL CONFIG & EXTREME CONTRAST THEME ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* Global UI Stealth */
+    /* 1. Global UI Stealth */
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
     
-    /* Desktop Mode (Dark) */
+    /* 2. Desktop Mode (Dark) */
     .stApp { background-color: #0d1117; color: #FFFFFF; }
-    div[data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; }
-    div[data-testid="stButton"] button { background-color: #21262d; color: #58a6ff; border: 1px solid #30363d; }
-
-    /* MOBILE-ONLY "LIGHT MODE" OVERRIDE (< 768px) */
+    
+    /* 3. MOBILE-ONLY "PAPER-WHITE" MODE (< 768px) */
     @media (max-width: 768px) {
-        /* Force White Background and Black Text */
+        /* Force Solid White Background */
         .stApp { background-color: #FFFFFF !important; color: #000000 !important; }
         
-        /* Tactical Labels & Metrics */
-        div[data-testid="stWidgetLabel"] p, [data-testid="stMetricLabel"] { color: #000000 !important; font-weight: 700 !important; }
-        div[data-testid="stMetricValue"] { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
-        
-        /* Metrics Container */
-        div[data-testid="stMetric"] { 
-            background-color: #f6f8fa !important; 
-            border: 1px solid #d0d7de !important; 
-        }
-
-        /* AI Suggestion Buttons (High Contrast Black-on-Gray) */
-        div[data-testid="stButton"] button {
-            background-color: #eeeeee !important;
-            color: #000000 !important;
-            border: 2px solid #000000 !important;
+        /* Force Universe/Radio Labels to Solid Black */
+        div[data-testid="stWidgetLabel"] p, div[data-testid="stRadio"] label { 
+            color: #000000 !important; 
+            font-weight: 900 !important; 
+            font-size: 1.1rem !important;
             -webkit-text-fill-color: #000000 !important;
         }
 
-        /* AI Chat Bubbles (Light Mode) */
+        /* Force Tab Menu (Research Desk, Protocol) to Solid Black */
+        button[data-baseweb="tab"] { 
+            color: #444444 !important; 
+            font-weight: 700 !important;
+        }
+        button[data-baseweb="tab"][aria-selected="true"] { 
+            color: #000000 !important; 
+            border-bottom-color: #000000 !important; 
+        }
+
+        /* Force Metric Values to Solid Black */
+        div[data-testid="stMetricValue"] { 
+            color: #000000 !important; 
+            -webkit-text-fill-color: #000000 !important; 
+            font-weight: 800 !important; 
+        }
+
+        /* Force AI Response Visibility */
         [data-testid="stChatMessage"] { 
             background-color: #f0f2f6 !important; 
-            border: 1px solid #d0d7de !important; 
+            border: 2px solid #000000 !important; 
         }
         [data-testid="stChatMessage"] p { 
             color: #000000 !important; 
             -webkit-text-fill-color: #000000 !important; 
+            font-weight: 500 !important;
         }
-        
-        /* Strategic Search Label */
-        div[data-testid="stTextInput"] label p { color: #005cc5 !important; }
     }
 
-    /* Fixed Box Styling */
+    /* Standard Card Styling */
     .strike-zone-box { 
         background-color: #1f2937; 
         border: 1px solid #4b5563; 
@@ -65,12 +68,7 @@ st.markdown("""
     }
     
     @media (max-width: 768px) {
-        .strike-zone-box { background-color: #f6f8fa !important; border-color: #d0d7de !important; color: #000000 !important; }
-    }
-
-    .disclaimer-box { 
-        background-color: #1c1c1c; border: 1px solid #f85149; padding: 15px; 
-        border-radius: 8px; color: #f85149; margin-top: 40px; text-align: center; font-weight: bold; 
+        .strike-zone-box { background-color: #eeeeee !important; border-color: #000000 !important; color: #000000 !important; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -91,7 +89,6 @@ def get_working_model(api_key):
 
 @st.cache_data(ttl=600)
 def rank_movers(universe):
-    """Identifies the 'Overstated' top movers and calculates Strike Zones."""
     idx = 1 if "India" in universe else 0
     url = "https://en.wikipedia.org/wiki/NIFTY_50" if idx == 1 else "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     try:
@@ -105,16 +102,15 @@ def rank_movers(universe):
                 if len(h) < 2: continue
                 c, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
                 p = (hi + lo + prev) / 3
-                res.append({
-                    "ticker": s, "price": c, "change": ((c-prev)/prev)*100, 
-                    "entry": (2*p)-hi, "target": (2*p)-lo, "abs": abs(((c-prev)/prev)*100)
-                })
+                res.append({"ticker": s, "price": c, "change": ((c-prev)/prev)*100, "entry": (2*p)-hi, "target": (2*p)-lo, "abs": abs(((c-prev)/prev)*100)})
             except: continue
         return pd.DataFrame(res).sort_values(by='abs', ascending=False).head(5).to_dict('records')
     except: return []
 
 # --- 4. MAIN INTERFACE ---
 st.title("🏛️ Sovereign Terminal")
+
+# UNIVERSAL SELECTION LOCK
 exch = st.radio("Universe Selection:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 leaders = rank_movers(exch)
 
@@ -127,35 +123,9 @@ with tab_t:
         for i, s in enumerate(leaders):
             status = "🔥 OVERSTATED" if abs(s['change']) > 4.0 else "⚡ VOLATILE"
             st.metric(label=f"{s['ticker']} ({status})", value=f"{curr}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
-            
-            # Strike Zone for Top 5
-            st.markdown(f"""
-            <div class="strike-zone-box">
-                <span style="color:#005cc5; font-weight:bold;">Entry: {curr}{s['entry']:.2f}</span> | 
-                <span style="color:#22863a; font-weight:bold;">Target: {curr}{s['target']:.2f}</span>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<div class='strike-zone-box'><b>Entry: {curr}{s['entry']:.2f} | Target: {curr}{s['target']:.2f}</b></div>", unsafe_allow_html=True)
             leader_ctx += f"{s['ticker']}:{s['price']}; "
         st.session_state["current_context"] = leader_ctx
-    
-    st.divider()
-    search = st.text_input("Strategic Search (Ticker):", key=f"search_{exch}").strip().upper()
-    if search:
-        api_key = st.secrets.get("GEMINI_API_KEY")
-        try:
-            q_t = yf.Ticker(search); q_h = q_t.history(period="2d")
-            if not q_h.empty:
-                p_c, prev_c, p_h, p_l = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
-                p_pt = (p_h + p_l + prev_c) / 3
-                st.metric(label=search, value=f"{curr}{p_c:.2f}", delta=f"{((p_c-prev_c)/prev_c)*100:.2f}%")
-                st.markdown(f'<div class="strike-zone-box"><span style="color:#005cc5; font-weight:bold;">Entry: {curr}{(2*p_pt)-p_h:.2f}</span> | <span style="color:#22863a; font-weight:bold;">Target: {curr}{(2*p_pt)-p_l:.2f}</span></div>', unsafe_allow_html=True)
-                if api_key:
-                    with st.spinner("🧠 Advisor thinking..."):
-                        model = genai.GenerativeModel(get_working_model(api_key))
-                        thesis = model.generate_content(f"3-point bull thesis for {search}").text
-                        st.markdown(f"### 📈 Thesis: {search}")
-                        st.markdown(f"<div style='background:#f6f8fa; border-left:4px solid #005cc5; padding:15px; color:#000000;'>{thesis}</div>", unsafe_allow_html=True)
-        except: st.error("Ticker offline.")
 
 with tab_r:
     api_key = st.secrets.get("GEMINI_API_KEY")
@@ -178,33 +148,17 @@ with tab_r:
         st.session_state["suggested_query"] = None
         with st.chat_message("user"): st.markdown(final_q)
         with st.chat_message("assistant"):
-            with st.spinner("🧠 Processing..."):
+            with st.spinner("🧠 Thinking..."):
                 model = genai.GenerativeModel(get_working_model(api_key))
                 ans = model.generate_content(f"Context: {st.session_state.current_context}\nQ: {final_q}").text
                 st.markdown(ans); st.session_state["messages"].append({"role": "assistant", "content": ans})
         st.rerun()
 
 with tab_a:
-    st.write("### 📜 Sovereign Terminal Protocol (v80.0)")
+    st.write("### 📜 Sovereign Protocol (v81.0)")
     st.markdown("""
-    The Sovereign Terminal is a professional-grade intelligence suite for tactical analysis.
-    
-    **🏛️ Data & Analysis Engine**
-    * **Adaptive Contrast:** Desktop remains in professional Dark Mode; Mobile forces high-contrast Light Mode (Black on White).
-    * **Strike Zone & Overstated Logic:** $S1/R1$ pivots are hard-coded into metrics; stocks moving >4% are flagged as 'OVERSTATED'.
-    * **Strategic Search:** Manual ticker input triggers precision pivot math and AI bull thesis.
-    
-    **🏛️ UI/UX & Mobile Hardening**
-    * **Luminance Fortress:** Hardware-accelerated text-fill color locks prevent 'invisible' text on mobile.
-    * **Interaction Stability:** Key-anchored buttons and state-persistent logic prevent 'dead elements'.
-    
-    **🏛️ Technical Protocol**
-    | Category | Implementation Detail |
-    | :--- | :--- |
-    | **Pivot Formula** | $P = (High + Low + Close) / 3$ |
-    | **Support ($S1$)** | $(2 \\times P) - High$ |
-    | **Resistance ($R1$)** | $(2 \\times P) - Low$ |
-    | **Quota Cap** | 2,000 RPM (Professional Tier) |
+    **🏛️ Mobile Visibility Guard**
+    * **Paper-White Mode:** Forced white background/black text for mobile to ensure 100% legibility.
+    * **Menu Anchor:** Universe selection and tab labels (Research Desk, Protocol) are hard-locked to bold black.
+    * **Response Lock:** AI chat bubbles use hardware-level color fill to prevent invisible text bugs.
     """)
-
-st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Financial trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
