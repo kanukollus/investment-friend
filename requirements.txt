@@ -5,3 +5,4 @@ plotly
 lxml
 html5lib
 requests
+google-generativeai>=0.8.3
