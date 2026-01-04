@@ -28,7 +28,7 @@ st.markdown("""
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 
-# --- 3. DYNAMIC AI HANDLER ---
+# --- 3. DYNAMIC AI HANDLER (Stability Optimized) ---
 def get_working_model(key):
     genai.configure(api_key=key)
     try:
@@ -48,9 +48,9 @@ def handle_ai_query(prompt, context, key):
             if "429" in str(e) and attempt < 2:
                 time.sleep((attempt + 1) * 3)
                 continue
-            return "⚠️ Quota Exceeded. Please wait 60s for the free-tier reset."
+            return "⚠️ Quota Exceeded. Please wait 60s for the reset."
 
-# --- 4. DATA ENGINE (US & India) ---
+# --- 4. DATA ENGINE (With KeyError Guard) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     if exchange_choice == "India (Nifty 50)":
@@ -70,8 +70,8 @@ def rank_movers(exchange_choice):
         try:
             t = yf.Ticker(symbol)
             h = t.history(period="2d")
-            info = t.info
             if len(h) < 2: continue
+            info = t.info
             curr, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
             piv = (hi + lo + prev) / 3
             results.append({
@@ -82,7 +82,12 @@ def rank_movers(exchange_choice):
                 "abs_change": abs(((curr-prev)/prev)*100)
             })
         except: continue
-    return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
+    
+    # ⚠️ KEYERROR GUARD: Return empty list if no data was found
+    if not results: return []
+    
+    df = pd.DataFrame(results)
+    return df.sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
 
 # --- 5. UI INTERFACE ---
 st.title("🏛️ Sovereign Intelligence Terminal")
@@ -93,31 +98,35 @@ tab_tactical, tab_research = st.tabs(["⚡ Tactical Terminal", "🤖 AI Research
 with tab_tactical:
     st.write(f"### {exchange_choice} Volatility Leaders")
     leaders = rank_movers(exchange_choice)
-    leader_context = f"Leaders in {exchange_choice}: "
     
-    cols = st.columns(5)
-    for i, stock in enumerate(leaders):
-        with cols[i]:
-            status = "⚠️ OVEREXTENDED" if stock['price'] > stock['target'] else "✅ STRIKE ZONE"
-            curr_sym = "₹" if "India" in exchange_choice else "$"
-            st.metric(label=stock['ticker'], value=f"{curr_sym}{stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
-            
-            # Expanded Tactical Card
-            st.markdown(f"""
-                <div class="strike-zone-card">
-                    <b style="color:#8b949e; font-size:0.65rem; display:block; margin-bottom:5px;">{stock['name'][:25]}</b>
-                    <b style="color:#8b949e; font-size:0.7rem;">{status}</b><br>
-                    <span class="val-entry">Entry: {stock['entry']:.2f}</span><br>
-                    <span class="val-target">Target: {stock['target']:.2f}</span><hr style="border:0.1px solid #30363d; margin:8px 0;">
-                    <span class="val-range">52W H: {stock['h52']:.2f}</span><br>
-                    <span class="val-range">52W L: {stock['l52']:.2f}</span>
-                </div>
-            """, unsafe_allow_html=True)
-            leader_context += f"{stock['ticker']} ({stock['name']}, ${stock['price']:.2f}); "
+    if not leaders:
+        st.warning("No market data available for current sample. Refreshing in 60s...")
+    else:
+        leader_context = f"Leaders in {exchange_choice}: "
+        cols = st.columns(5)
+        for i, stock in enumerate(leaders):
+            with cols[i]:
+                status = "⚠️ OVEREXTENDED" if stock['price'] > stock['target'] else "✅ STRIKE ZONE"
+                curr_sym = "₹" if "India" in exchange_choice else "$"
+                st.metric(label=stock['ticker'], value=f"{curr_sym}{stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
+                
+                # Full Profile Tactical Card
+                st.markdown(f"""
+                    <div class="strike-zone-card">
+                        <b style="color:#8b949e; font-size:0.65rem; display:block; margin-bottom:5px;">{stock['name'][:25]}</b>
+                        <b style="color:#8b949e; font-size:0.7rem;">{status}</b><br>
+                        <span class="val-entry">Entry: {stock['entry']:.2f}</span><br>
+                        <span class="val-target">Target: {stock['target']:.2f}</span><hr style="border:0.1px solid #30363d; margin:8px 0;">
+                        <span class="val-range">52W High: {stock['h52']:.2f}</span><br>
+                        <span class="val-range">52W Low: {stock['l52']:.2f}</span>
+                    </div>
+                """, unsafe_allow_html=True)
+                leader_context += f"{stock['ticker']} ({stock['name']}, ${stock['price']:.2f}); "
+        st.session_state.current_context = leader_context
 
     st.divider()
     st.write("### 🔍 Strategic Asset Search")
-    query = st.text_input("Enter Ticker (e.g. RELIANCE.NS, TSLA):").upper()
+    query = st.text_input("Deep-Dive Ticker (e.g. RELIANCE.NS, TSLA):").upper()
     if query:
         try:
             q_t = yf.Ticker(query); q_h = q_t.history(period="2d"); q_i = q_t.info
@@ -132,19 +141,16 @@ with tab_tactical:
                         <span class="val-range">52W Range: ${q_i.get('fiftyTwoWeekLow', 0):.2f} - ${q_i.get('fiftyTwoWeekHigh', 0):.2f}</span>
                     </div>
                 """, unsafe_allow_html=True)
-                st.session_state.current_context = f"Analyzing {query}: {p:.2f}. " + leader_context
         except: st.error("Ticker not found.")
-    else: st.session_state.current_context = leader_context
 
 with tab_research:
     c1, c2 = st.columns([4, 1])
     with c1: st.write("### AI Research Desk")
     with c2: 
-        if st.button("🗑️ Clear"):
+        if st.button("🗑️ Clear History"):
             st.session_state.messages = []; st.rerun()
 
-    # Suggestion Buttons
-    suggestions = ["Analyze the leaders", "Define Strike Zone", "Market Trend?"]
+    suggestions = ["Explain the leaders", "What is Strike Zone?", "Nifty 50 Trend?"]
     s_cols = st.columns(3); clicked = None
     for idx, s in enumerate(suggestions):
         if s_cols[idx].button(s, use_container_width=True): clicked = s
@@ -160,7 +166,7 @@ with tab_research:
             st.session_state.messages.append({"role": "user", "content": final_query})
             with st.chat_message("user"): st.write(final_query)
             with st.chat_message("assistant"):
-                with st.spinner("Reviewing tape..."):
+                with st.spinner("Analyzing market structure..."):
                     context = "Role: Senior Institutional Advisor. Context: " + st.session_state.current_context
                     ans = handle_ai_query(final_query, context, api_key)
                     st.markdown(f"<div class='advisor-brief'>{ans}</div>", unsafe_allow_html=True)
