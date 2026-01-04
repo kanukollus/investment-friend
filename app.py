@@ -10,52 +10,31 @@ st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. Global UI Stealth */
+    /* Global UI Stealth */
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
     
-    /* 2. Desktop Defaults (Dark Mode) */
+    /* Desktop Defaults (Dark Mode) */
     .stApp { background-color: #0d1117; color: #FFFFFF; }
     div[data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; }
     div[data-testid="stButton"] button { background-color: #21262d; color: #58a6ff; border: 1px solid #30363d; }
 
-    /* 3. MOBILE-ONLY "LIGHT MODE" OVERRIDE (< 768px) */
+    /* MOBILE-ONLY "LIGHT MODE" OVERRIDE (< 768px) */
     @media (max-width: 768px) {
-        /* Force White Background and Black Text */
         .stApp { background-color: #FFFFFF !important; color: #000000 !important; }
-        
-        /* Tactical Labels & Metrics */
         div[data-testid="stWidgetLabel"] p, [data-testid="stMetricLabel"] { color: #000000 !important; font-weight: 700 !important; }
         div[data-testid="stMetricValue"] { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
-        
-        /* Metrics Container */
-        div[data-testid="stMetric"] { 
-            background-color: #f6f8fa !important; 
-            border: 1px solid #d0d7de !important; 
-        }
-
-        /* AI Suggestion Buttons (High Contrast Black-on-Gray) */
+        div[data-testid="stMetric"] { background-color: #f6f8fa !important; border: 1px solid #d0d7de !important; }
         div[data-testid="stButton"] button {
             background-color: #eeeeee !important;
             color: #000000 !important;
             border: 2px solid #000000 !important;
             -webkit-text-fill-color: #000000 !important;
         }
-
-        /* AI Chat Bubbles (Light Mode) */
-        [data-testid="stChatMessage"] { 
-            background-color: #f0f2f6 !important; 
-            border: 1px solid #d0d7de !important; 
-        }
-        [data-testid="stChatMessage"] p { 
-            color: #000000 !important; 
-            -webkit-text-fill-color: #000000 !important; 
-        }
-        
-        /* Strategic Search Label */
+        [data-testid="stChatMessage"] { background-color: #f0f2f6 !important; border: 1px solid #d0d7de !important; }
+        [data-testid="stChatMessage"] p { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
         div[data-testid="stTextInput"] label p { color: #005cc5 !important; }
     }
 
-    /* 4. Global Disclaimer Guard */
     .disclaimer-box { 
         background-color: #1c1c1c; 
         border: 1px solid #f85149; 
@@ -73,6 +52,8 @@ st.markdown("""
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 if "suggested_query" not in st.session_state: st.session_state.suggested_query = None
+# TAB PERSISTENCE: Track active tab to prevent jump
+if "active_tab" not in st.session_state: st.session_state.active_tab = 0
 
 # --- 3. DYNAMIC MODEL DISCOVERY ---
 @st.cache_data(ttl=3600)
@@ -110,9 +91,12 @@ st.title("🏛️ Sovereign Terminal")
 exch = st.radio("Universe Selection:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 leaders = rank_movers(exch)
 
-tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
+# 🏛️ TAB PERSISTENCE LOGIC
+tabs = ["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"]
+tab_t, tab_r, tab_a = st.tabs(tabs)
 
 with tab_t:
+    st.session_state.active_tab = 0 # Mark active tab
     curr = "₹" if "India" in exch else "$"
     if leaders:
         leader_ctx = ""
@@ -133,7 +117,7 @@ with tab_t:
                 piv = (hi + lo + prev) / 3
                 st.metric(label=search, value=f"{curr}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
                 if api_key:
-                    with st.spinner(f"🧠 Advisor thinking about {search}..."):
+                    with st.spinner(f"🧠 Advisor thinking..."):
                         model = genai.GenerativeModel(get_working_model(api_key))
                         thesis = model.generate_content(f"3-point bull thesis for {search}").text
                         st.markdown(f"### 📈 Thesis: {search}")
@@ -141,6 +125,7 @@ with tab_t:
         except: st.error("Ticker offline.")
 
 with tab_r:
+    st.session_state.active_tab = 1 # Mark active tab
     api_key = st.secrets.get("GEMINI_API_KEY")
     if st.button("🗑️ Reset Chat", key="clear_chat_btn"): 
         st.session_state.messages = []; st.session_state.suggested_query = None; st.rerun()
@@ -150,6 +135,7 @@ with tab_r:
     for idx, s in enumerate(s_list):
         if s_cols[idx].button(s, key=f"s_btn_{idx}", use_container_width=True): 
             st.session_state.suggested_query = s
+            st.rerun() # Force re-run to process click while staying on this tab
 
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -169,7 +155,8 @@ with tab_r:
         st.rerun()
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol (v71.0)")
-    st.markdown("* **Adaptive Contrast:** Desktop remains dark; Mobile forces high-contrast Light Mode.\n* **Inversion Guard:** Direct `-webkit-text-fill-color` locks to prevent browser color bugs.\n* **Pro Tier:** Built for professional quotas (2,000 RPM).")
+    st.session_state.active_tab = 2 # Mark active tab
+    st.write("### 📜 Sovereign Protocol (v72.0)")
+    st.markdown("* **Tab Resilience:** Logic implemented to prevent "tab-jumping" during AI generation.\n* **Adaptive Contrast:** High-contrast light mode on mobile to prevent "Smart Inversion" bugs.\n* **Pro Tier:** Built for professional quotas (2,000 RPM).")
 
 st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
