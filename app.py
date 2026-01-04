@@ -6,48 +6,63 @@ import google.generativeai as genai
 import time
 import random
 
-# --- 1. PAGE CONFIG & THEME ---
+# --- 1. ARCHITECTURAL CONFIG & THEME ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
+    /* UI Cloaking */
     header, footer, .stDeployButton, [data-testid="stToolbar"], [data-testid="stDecoration"] { 
         visibility: hidden !important; height: 0 !important; display: none !important; 
     }
     .stApp { background-color: #0d1117; color: #f0f6fc; }
+    
+    /* Optimized Component Styling */
     [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; padding: 1.2rem !important; border-radius: 12px; }
     .strike-zone-card { background-color: #010409; border: 1px solid #444c56; padding: 14px; border-radius: 10px; margin-top: 10px; font-family: monospace; }
     .val-entry { color: #58a6ff; font-weight: bold; }
     .val-target { color: #3fb950; font-weight: bold; }
+    
     .advisor-brief { background-color: #161b22; border-left: 4px solid #d29922; color: #e6edf3; padding: 12px; margin-top: 8px; border-radius: 0 8px 8px 0; font-size: 0.88rem; }
     .disclaimer-box { background-color: #1c1c1c; border: 1px solid #333; padding: 15px; border-radius: 8px; font-size: 0.75rem; color: #888; margin-top: 30px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SESSION STATE ---
+# --- 2. ARCHITECTURAL OPTIMIZATION: AI LOAD BALANCER ---
 if "messages" not in st.session_state: st.session_state.messages = []
-if "current_context" not in st.session_state: st.session_state.current_context = ""
+if "last_request_time" not in st.session_state: st.session_state.last_request_time = 0
 
-# --- 3. QUOTA-SHIELDED AI HANDLER ---
-def handle_ai_query(prompt, context, key):
+def handle_ai_query_optimized(prompt, context, key):
+    # OPTIMIZATION 1: Inter-request Delay (Minimum 10s between calls)
+    now = time.time()
+    elapsed = now - st.session_state.last_request_time
+    if elapsed < 10:
+        wait_needed = int(10 - elapsed)
+        return f"⏳ Architectural Delay: Please wait {wait_needed}s to prevent API banning."
+
     genai.configure(api_key=key)
-    # Shield: Forced 5-second pause to prevent rapid-fire requests
-    time.sleep(5) 
     
-    for attempt in range(3):
+    # OPTIMIZATION 2: Model Fallback (Try 1.5-Flash, then 1.5-Pro)
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro']
+    
+    for model_name in models_to_try:
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            # Shield: Shortened prompt to stay under token-per-minute limits
-            compressed_prompt = f"Data: {context[:500]}\nQ: {prompt}"
-            return model.generate_content(compressed_prompt).text
+            model = genai.GenerativeModel(model_name)
+            # OPTIMIZATION 3: Context Truncation (Conserve Tokens)
+            short_ctx = context[:400] 
+            full_prompt = f"Role: Senior Quant Advisor. Market State: {short_ctx}. Question: {prompt}"
+            
+            response = model.generate_content(full_prompt)
+            st.session_state.last_request_time = time.time() # Update success time
+            return response.text
         except Exception as e:
             if "429" in str(e):
-                # Shield: Aggressive 10-second wait on error
-                time.sleep(10)
+                time.sleep(2) # Micro-backoff
                 continue
-            return "⚠️ Service busy. Please wait 30s before trying again."
+            return f"⚠️ System Busy: Quota reached. Try in 60s."
+    return "⚠️ Quota Exhausted: All models busy."
 
-# --- 4. DATA ENGINE (Base v31.0 - Stable) ---
+# --- 3. DATA ENGINE (Base v31.0 - Stable) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     idx = 1 if "India" in exchange_choice else 0
@@ -73,7 +88,7 @@ def rank_movers(exchange_choice):
         return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
     except: return []
 
-# --- 5. MAIN UI ---
+# --- 4. MAIN INTERFACE ---
 st.title("🏛️ Sovereign Intelligence Terminal")
 exchange_choice = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
@@ -95,25 +110,37 @@ with tab_tactical:
 with tab_research:
     api_key = st.secrets.get("GEMINI_API_KEY")
     if api_key:
-        if st.button("🗑️ Clear"): st.session_state.messages = []; st.rerun()
-        
-        # Shield: Suggestion buttons no longer auto-trigger a request
-        suggestions = ["Analyze the tape", "Define Strike Zone"]
-        cols = st.columns(2)
-        clicked = None
-        for i, s in enumerate(suggestions):
-            if cols[i].button(s): clicked = s
-
+        if st.button("🗑️ Clear Chat"):
+            st.session_state.messages = []
+            st.rerun()
+            
         for m in st.session_state.messages:
             with st.chat_message(m["role"]): st.write(m["content"])
         
-        if (prompt := st.chat_input("Ask a question...")) or clicked:
-            final_p = prompt if prompt else clicked
-            st.session_state.messages.append({"role": "user", "content": final_p})
-            with st.chat_message("user"): st.write(final_p)
+        if prompt := st.chat_input("Ask about the leaders..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"): st.write(prompt)
+            
             with st.chat_message("assistant"):
-                ans = handle_ai_query(final_p, st.session_state.current_context, api_key)
+                ans = handle_ai_query_optimized(prompt, st.session_state.current_context, api_key)
                 st.write(ans)
                 st.session_state.messages.append({"role": "assistant", "content": ans})
 
-st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. Trading involves risk. You are solely responsible for your financial decisions.</div>""", unsafe_allow_html=True)
+with tab_about:
+    st.write("### 🏛️ Sovereign Protocol & Features")
+    st.markdown("""
+    **The Sovereign Intelligence Terminal (v31.0 Base)** is an institutional-grade suite designed for 2026 trading.
+    
+    #### ⚡ Tactical Features
+    - **Dynamic Discovery:** Real-time scrape of S&P 500 and Nifty 50 indexes.
+    - **Volatility Ranking:** Identifies movers by absolute magnitude of price energy.
+    - **Pivot Point Math:** Automated S1 (Entry) and R1 (Target) levels.
+    - **Global Toggle:** Switch between US ($) and India (₹) instantly.
+    
+    #### 🤖 AI Optimizations
+    - **Architectural Throttling:** Minimum 10-second gap enforced between requests.
+    - **Context Compression:** Shortened data snapshots to conserve API tokens.
+    - **Model Fallback:** Multi-model routing to handle high-traffic spikes.
+    """)
+
+st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. <b>USER RESPONSIBILITY:</b> You are solely responsible for your financial decisions.</div>""", unsafe_allow_html=True)
