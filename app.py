@@ -6,7 +6,7 @@ import google.generativeai as genai
 import time
 import random
 
-# --- 1. PAGE CONFIG & STEALTH THEME ---
+# --- 1. PAGE CONFIG & THEME ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
@@ -25,10 +25,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SESSION STATE ---
+# --- 2. SESSION STATE & AI HANDLER ---
 if "messages" not in st.session_state: st.session_state.messages = []
 
-# --- 3. DYNAMIC AI HANDLER ---
 def get_working_model(key):
     genai.configure(api_key=key)
     try:
@@ -48,7 +47,7 @@ def handle_ai_query(prompt, context, key):
                 time.sleep(5); continue
             return "⚠️ Service Busy: Quota reached. Please wait 60s."
 
-# --- 4. STABLE DATA ENGINE ---
+# --- 3. STABLE DATA ENGINE (Serialization Safe) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     idx = 1 if "India" in exchange_choice else 0
@@ -67,16 +66,16 @@ def rank_movers(exchange_choice):
                 if len(h) < 2: continue
                 curr, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
                 piv = (hi + lo + prev) / 3
+                # Returning ONLY serializable data (strings, floats)
                 results.append({
                     "ticker": symbol, "price": curr, "change": ((curr-prev)/prev)*100,
-                    "entry": (2*piv)-hi, "target": (2*piv)-lo, "abs_change": abs(((curr-prev)/prev)*100),
-                    "history": h, "raw_t": t # Storing ticker object for Alpha Toggle
+                    "entry": (2*piv)-hi, "target": (2*piv)-lo, "abs_change": abs(((curr-prev)/prev)*100)
                 })
             except: continue
         return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
     except: return []
 
-# --- 5. MAIN INTERFACE ---
+# --- 4. MAIN INTERFACE ---
 st.title("🏛️ Sovereign Intelligence Terminal")
 exchange_choice = st.radio("Market Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
@@ -88,8 +87,9 @@ with tab_tactical:
     curr_sym = "₹" if "India" in exchange_choice else "$"
     
     if not leaders:
-        st.warning("⚠️ Market link resetting. Please refresh in 30s.")
+        st.warning("⚠️ Market data unavailable. Please refresh in 30s.")
     else:
+        leader_context = "Current Leaders: "
         cols = st.columns(5)
         for i, stock in enumerate(leaders):
             with cols[i]:
@@ -97,14 +97,15 @@ with tab_tactical:
                 
                 alpha_html = ""
                 if alpha_mode:
-                    info = stock['raw_t'].info
+                    # Fetch extra details ONLY for these 5 tickers to stay stable
+                    t_info = yf.Ticker(stock['ticker']).info
                     stop = stock['entry'] * 0.985
                     rr = abs(stock['target']-stock['entry'])/abs(stock['entry']-stop) if abs(stock['entry']-stop) != 0 else 0
                     alpha_html = f"""
                         <hr style="border:0.1px solid #333; margin:8px 0;">
-                        <b style="color:#8b949e; font-size:0.65rem;">{info.get('longName', 'Security')[:20]}</b><br>
-                        <span class="val-alpha">52W H: {curr_sym}{info.get('fiftyTwoWeekHigh', 0):.2f}</span><br>
-                        <span class="val-alpha">52W L: {curr_sym}{info.get('fiftyTwoWeekLow', 0):.2f}</span><br>
+                        <b style="color:#8b949e; font-size:0.65rem;">{t_info.get('longName', 'Security')[:20]}</b><br>
+                        <span class="val-alpha">52W H: {curr_sym}{t_info.get('fiftyTwoWeekHigh', 0):.2f}</span><br>
+                        <span class="val-alpha">52W L: {curr_sym}{t_info.get('fiftyTwoWeekLow', 0):.2f}</span><br>
                         <span class="val-alpha">R/R Ratio: {rr:.2f}</span>
                     """
 
@@ -115,9 +116,11 @@ with tab_tactical:
                         {alpha_html}
                     </div>
                 """, unsafe_allow_html=True)
+                leader_context += f"{stock['ticker']} ({stock['price']:.2f}); "
+        st.session_state.current_context = leader_context
 
     st.divider()
-    query = st.text_input("Deep-Dive Any Ticker (Search automatically includes Full Profile):").upper()
+    query = st.text_input("Deep-Dive Any Ticker (e.g. RELIANCE.NS, TSLA):").upper()
     if query:
         try:
             q_t = yf.Ticker(query); q_h = q_t.history(period="2d"); q_i = q_t.info
@@ -135,18 +138,42 @@ with tab_tactical:
 with tab_research:
     c1, c2 = st.columns([4, 1]); c1.write("### AI Research Desk")
     if c2.button("🗑️ Clear"): st.session_state.messages = []; st.rerun()
-    # (AI Suggestions and Chat logic remain active)
-    # ...
+
+    api_key = st.secrets.get("GEMINI_API_KEY")
+    if api_key:
+        suggestions = ["Explain the leaders", "What is Strike Zone?", "Nifty 50 Trend?"]
+        s_cols = st.columns(3); clicked = None
+        for idx, s in enumerate(suggestions):
+            if s_cols[idx].button(s, use_container_width=True): clicked = s
+
+        for m in st.session_state.messages:
+            with st.chat_message(m["role"]): st.write(m["content"])
+        
+        prompt = st.chat_input("Analyze market energy...")
+        final_query = prompt if prompt else clicked
+        if final_query:
+            st.session_state.messages.append({"role": "user", "content": final_query})
+            with st.chat_message("user"): st.write(final_query)
+            with st.chat_message("assistant"):
+                ans = handle_ai_query(final_query, st.session_state.current_context, api_key)
+                st.markdown(f"<div class='advisor-brief'>{ans}</div>", unsafe_allow_html=True)
+                st.session_state.messages.append({"role": "assistant", "content": ans})
 
 with tab_about:
     st.markdown("""
-    ### 🏛️ Sovereign Protocol & Alpha Features (v36.5)
-    * **Dynamic Discovery:** Real-time scrape of S&P 500 and Nifty 50.
+    ### 🏛️ Sovereign Protocol & Alpha Features (v37.0)
+    
+    #### ⚡ Core Tactical Features (Validated)
+    * **Dynamic Market Discovery:** Real-time scrape of S&P 500 and Nifty 50.
     * **Volatility Ranking:** Stocks identified by absolute percentage change.
     * **Pivot Math:** Institutional Entry (S1) and Target (R1) levels.
     * **✨ Alpha Toggle:** On-demand access to Security Names, 52W Data, and R/R Ratios.
     * **Global Toggle:** Switch between US ($) and India (₹).
     * **Institutional Disclaimer:** Final legal protocols and user responsibility anchored.
+    
+    #### 🤖 AI & Infrastructure
+    * **Exponential Backoff:** Stability guard for Gemini free-tier limits.
+    * **Whitelabel UI:** Custom OLED-contrast theme with Streamlit branding hidden.
     """)
 
 st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. Trading involves risk. <b>USER RESPONSIBILITY:</b> You are solely responsible for your financial decisions and actions.</div>""", unsafe_allow_html=True)
