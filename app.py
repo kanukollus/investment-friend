@@ -28,10 +28,23 @@ st.markdown("""
             border: 2px solid #000000 !important;
             -webkit-text-fill-color: #000000 !important;
         }
+        [data-testid="stChatMessage"] { background-color: #f0f2f6 !important; border: 1px solid #d0d7de !important; }
+        [data-testid="stChatMessage"] p { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
     }
 
-    .search-result-box { background-color: #1f2937; border: 1px solid #4b5563; padding: 15px; border-radius: 10px; margin-top: 10px; }
-    .disclaimer-box { background-color: #1c1c1c; border: 1px solid #f85149; padding: 15px; border-radius: 8px; color: #f85149; margin-top: 40px; text-align: center; font-weight: bold; }
+    .strike-zone-box { 
+        background-color: #1f2937; 
+        border: 1px solid #4b5563; 
+        padding: 12px; 
+        border-radius: 8px; 
+        margin-top: 8px; 
+        font-family: monospace; 
+    }
+    
+    .disclaimer-box { 
+        background-color: #1c1c1c; border: 1px solid #f85149; padding: 15px; 
+        border-radius: 8px; color: #f85149; margin-top: 40px; text-align: center; font-weight: bold; 
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -39,7 +52,6 @@ st.markdown("""
 if "messages" not in st.session_state: st.session_state["messages"] = []
 if "current_context" not in st.session_state: st.session_state["current_context"] = ""
 if "suggested_query" not in st.session_state: st.session_state["suggested_query"] = None
-if "active_tab" not in st.session_state: st.session_state["active_tab"] = 0
 
 # --- 3. AI & DATA ENGINES ---
 @st.cache_data(ttl=3600)
@@ -52,6 +64,7 @@ def get_working_model(api_key):
 
 @st.cache_data(ttl=600)
 def rank_movers(universe):
+    """Identifies the 'Overstated' top movers and calculates Strike Zones."""
     idx = 1 if "India" in universe else 0
     url = "https://en.wikipedia.org/wiki/NIFTY_50" if idx == 1 else "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     try:
@@ -64,8 +77,12 @@ def rank_movers(universe):
                 t = yf.Ticker(s); h = t.history(period="2d")
                 if len(h) < 2: continue
                 c, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
+                # PIVOT MATH
                 p = (hi + lo + prev) / 3
-                res.append({"ticker": s, "price": c, "change": ((c-prev)/prev)*100, "entry": (2*p)-hi, "target": (2*p)-lo, "abs": abs(((c-prev)/prev)*100)})
+                res.append({
+                    "ticker": s, "price": c, "change": ((c-prev)/prev)*100, 
+                    "entry": (2*p)-hi, "target": (2*p)-lo, "abs": abs(((c-prev)/prev)*100)
+                })
             except: continue
         return pd.DataFrame(res).sort_values(by='abs', ascending=False).head(5).to_dict('records')
     except: return []
@@ -78,13 +95,21 @@ leaders = rank_movers(exch)
 tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
 
 with tab_t:
-    st.session_state["active_tab"] = 0
     curr = "₹" if "India" in exch else "$"
     if leaders:
         leader_ctx = ""
         for i, s in enumerate(leaders):
-            st.metric(label=s['ticker'], value=f"{curr}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
-            st.markdown(f"<div style='border:1px solid #d0d7de; padding:10px; border-radius:8px; margin-top:5px; font-family:monospace;'><span style='color:#005cc5'>Entry: {curr}{s['entry']:.2f}</span> | <span style='color:#22863a'>Target: {curr}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
+            # 🏛️ OVERSTATED INDICATOR: Highlights extreme moves
+            status = "🔥 OVERSTATED" if abs(s['change']) > 4.0 else "⚡ VOLATILE"
+            st.metric(label=f"{s['ticker']} ({status})", value=f"{curr}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
+            
+            # 🏛️ STRIKE ZONE RESTORED
+            st.markdown(f"""
+            <div class="strike-zone-box">
+                <span style="color:#58a6ff; font-weight:bold;">Entry (S1): {curr}{s['entry']:.2f}</span> | 
+                <span style="color:#3fb950; font-weight:bold;">Target (R1): {curr}{s['target']:.2f}</span>
+            </div>
+            """, unsafe_allow_html=True)
             leader_ctx += f"{s['ticker']}:{s['price']}; "
         st.session_state["current_context"] = leader_ctx
     
@@ -98,7 +123,7 @@ with tab_t:
                 p_c, prev_c, p_h, p_l = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
                 p_pt = (p_h + p_l + prev_c) / 3
                 st.metric(label=search, value=f"{curr}{p_c:.2f}", delta=f"{((p_c-prev_c)/prev_c)*100:.2f}%")
-                st.markdown(f'<div class="search-result-box"><span style="color:#58a6ff; font-weight:bold;">Entry: {curr}{(2*p_pt)-p_h:.2f}</span><br><span style="color:#3fb950; font-weight:bold;">Target: {curr}{(2*p_pt)-p_l:.2f}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="strike-zone-box"><span style="color:#58a6ff; font-weight:bold;">Entry: {curr}{(2*p_pt)-p_h:.2f}</span> | <span style="color:#3fb950; font-weight:bold;">Target: {curr}{(2*p_pt)-p_l:.2f}</span></div>', unsafe_allow_html=True)
                 if api_key:
                     with st.spinner("🧠 Advisor thinking..."):
                         model = genai.GenerativeModel(get_working_model(api_key))
@@ -108,7 +133,6 @@ with tab_t:
         except: st.error("Ticker offline.")
 
 with tab_r:
-    st.session_state["active_tab"] = 1
     api_key = st.secrets.get("GEMINI_API_KEY")
     if st.button("🗑️ Reset Chat", key="clear_chat_btn"): 
         st.session_state["messages"] = []; st.session_state["suggested_query"] = None; st.rerun()
@@ -136,39 +160,26 @@ with tab_r:
         st.rerun()
 
 with tab_a:
-    st.session_state["active_tab"] = 2
-    st.write("### 🏛️ Sovereign Terminal Protocol (v78.0)")
-    # 🏛️ CONSOLIDATED FEATURE MANIFEST
+    st.write("### 📜 Sovereign Terminal Protocol (v79.0)")
     st.markdown("""
-    The Sovereign Terminal is a professional-grade, institutional intelligence suite designed for high-frequency stock research and tactical analysis.
+    The Sovereign Terminal is a professional-grade intelligence suite for tactical analysis.
     
     **🏛️ Data & Analysis Engine**
-    * **Volatility-First Discovery:** Ranks tickers by absolute percentage change to identify real-time market energy leaders.
-    * **Precision Pivot Math:** Uses Floor Trader Pivot Point math for intraday Support (Entry $S1$) and Resistance (Target $R1$).
-    * **Strategic Search:** Manual ticker input triggers on-demand pivot zone calculations and fundamental analysis.
-    * **Universe Switcher:** Seamlessly toggles between US and Indian markets with automatic currency/ticker handling.
-    
-    **🏛️ Artificial Intelligence & Research**
-    * **Professional Billing Tier:** Optimized for pay-as-you-go quotas (2,000 requests per minute).
-    * **Vedic Model Discovery:** Dynamic loop identifies and connects to the most stable Gemini 1.5-Flash model.
-    * **Automated Thesis Engine:** Generates 3-point investment theses covering Moat, Efficiency, and Catalysts.
-    * **Context-Aware Chat:** Research Desk carries current market leaders and prices into every AI query.
+    * **Strike Zone Restored:** Intraday $S1$ (Entry) and $R1$ (Target) are now hard-coded into the Top 5 metric cards.
+    * **Overstated Alert:** Leaders moving >4.0% are automatically tagged as 'OVERSTATED' to flag high-energy volatility.
+    * **Strategic Search:** Manual ticker input triggers precision pivot math and AI bull thesis.
     
     **🏛️ UI/UX & Mobile Hardening**
-    * **Adaptive Contrast:** Desktop Dark Mode / Mobile High-Contrast Light Mode to bypass 'Smart Inversion' bugs.
-    * **Luminance Fortress:** Hardware-accelerated text-fill color locks prevent 'invisible' text on mobile.
-    * **Interaction Stability:** Persistent keys and Index Anchoring prevent 'dead elements' and 'tab-jumping'.
-    * **Visual Feedback:** Integrated `st.spinner` animations for backend processing awareness.
+    * **Adaptive Contrast:** High-contrast Light Mode on mobile bypasses browser 'Smart Inversion' bugs.
+    * **Interaction Stability:** Key-anchored buttons and state-persistent logic prevent 'dead elements'.
     
-    **🏛️ Technical Protocol (Quick Reference)**
-    
+    **🏛️ Technical Protocol**
     | Category | Implementation Detail |
     | :--- | :--- |
     | **Pivot Formula** | $P = (High + Low + Close) / 3$ |
     | **Support ($S1$)** | $(2 \\times P) - High$ |
     | **Resistance ($R1$)** | $(2 \\times P) - Low$ |
     | **Quota Cap** | 2,000 RPM (Professional Tier) |
-    | **State Guard** | Explicit session_state initialization with .get() retrieval |
     """)
 
 st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Financial trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
