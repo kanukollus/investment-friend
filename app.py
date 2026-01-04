@@ -58,7 +58,7 @@ def handle_ai_query(prompt, context, key):
             if "429" in str(e):
                 time.sleep(3 ** attempt); continue
             return f"⚠️ Connection Error: {str(e)[:50]}..."
-    return e
+        return e
 
 # --- 5. DATA ENGINE (v31.0 Base) ---
 @st.cache_data(ttl=600)
