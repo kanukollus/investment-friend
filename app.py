@@ -37,7 +37,9 @@ st.markdown("""
 @st.cache_data(ttl=600)
 def rank_global_movers():
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    symbols = pd.read_html(url)[0]['Symbol'].tolist()
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(url, headers=headers)
+    symbols = pd.read_html(response.text)[0]['Symbol'].tolist()
     # Sample step to ensure global diversity and bypass ABC order
     sample = symbols[::12] 
     results = []
