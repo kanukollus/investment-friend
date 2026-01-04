@@ -12,10 +12,9 @@ st.set_page_config(page_title="Sovereign Terminal | GT Edition", layout="wide")
 
 st.markdown("""
     <style>
-    header, footer, .stDeployButton, [data-testid="stToolbar"], [data-testid="stDecoration"] { 
-        visibility: hidden !important; height: 0 !important; display: none !important; 
-    }
+    header, footer, .stDeployButton, [data-testid="stToolbar"] { visibility: hidden !important; height: 0; }
     .stApp { background-color: #0d1117; color: #f0f6fc; }
+    .quota-bar { background-color: #161b22; border: 1px solid #B3A369; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 20px; font-family: monospace; font-size: 0.9rem; }
     [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; padding: 1.2rem !important; border-radius: 12px; }
     .strike-zone-card { background-color: #010409; border: 1px solid #444c56; padding: 14px; border-radius: 10px; margin-top: 10px; font-family: monospace; }
     .val-entry { color: #58a6ff; font-weight: bold; }
@@ -25,38 +24,54 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GLOBAL STATE GUARD ---
+# --- 2. GLOBAL STATE & QUOTA TRACKER ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
+if "quota_remaining" not in st.session_state: st.session_state.quota_remaining = 20
 
-# --- 3. VEDIC DYNAMIC MODEL DISCOVERY ---
+# --- 3. OPTIMIZED VEDIC DISCOVERY (Recommendation 1: 8B Focus) ---
 @st.cache_data(ttl=3600)
 def get_working_model(api_key):
     genai.configure(api_key=api_key)
     try:
         available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # PRIORITY: 1.5-Flash-8B (Efficient, higher free limits)
+        if 'models/gemini-1.5-flash-8b' in available: return 'models/gemini-1.5-flash-8b'
         if 'models/gemini-1.5-flash' in available: return 'models/gemini-1.5-flash'
         return available[0]
     except Exception:
-        return "models/gemini-1.5-flash"
+        return "models/gemini-1.5-flash-8b"
 
-# --- 4. RESILIENT AI HANDLER (Integrated generate_with_retry) ---
+# --- 4. CACHED AI HANDLER (Recommendation 3: Prevent Double-Spending) ---
+@st.cache_data(show_spinner=False)
+def cached_ai_call(prompt, context, api_key, _model_name):
+    # This prevents the app from re-calling the API if the prompt hasn't changed
+    model = genai.GenerativeModel(_model_name)
+    full_prompt = f"Consolidated Context: {context}\nRequest: {prompt}"
+    response = model.generate_content(full_prompt)
+    return response.text if response and hasattr(response, 'text') else "⚠️ Response blocked."
+
 def generate_with_retry(prompt, context, api_key):
     model_name = get_working_model(api_key)
-    model = genai.GenerativeModel(model_name)
     retries, delay = 3, 2
 
     for i in range(retries):
         try:
-            full_prompt = f"Context: {context[:300]}\nUser: {prompt}"
-            response = model.generate_content(full_prompt)
-            if response and hasattr(response, 'text'): return response.text
-            return "⚠️ Response blocked by safety filters."
+            if st.session_state.quota_remaining <= 0:
+                return "🚨 Institutional Quota Exhausted (20/20). Please reset daily limit."
+            
+            # Using cached call to protect quota
+            ans = cached_ai_call(prompt, context, api_key, model_name)
+            
+            # Successful call: Reduce quota count
+            st.session_state.quota_remaining -= 1
+            return ans
+        
         except exceptions.ResourceExhausted as e:
             if i < retries - 1:
                 st.warning(f"Quota hit. Retrying in {delay}s...")
                 time.sleep(delay)
-                delay *= 2
+                delay *= 2 # Exponential Backoff
             else: return f"🚨 Max retries reached: {str(e)}"
         except Exception as e: return f"🚨 RAW ERROR: {str(e)}"
 
@@ -69,22 +84,29 @@ def rank_movers(universe):
         resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
         syms = pd.read_html(resp.text)[idx]['Symbol'].tolist()
         if idx == 1: syms = [s + ".NS" for s in syms]
-        results = []
+        res = []
         for s in syms[::max(1, len(syms)//40)]:
             try:
                 t = yf.Ticker(s); h = t.history(period="2d")
                 if len(h) < 2: continue
                 c, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
                 p = (hi + lo + prev) / 3
-                results.append({"ticker": s, "price": c, "change": ((c-prev)/prev)*100, "entry": (2*p)-hi, "target": (2*p)-lo, "abs": abs(((c-prev)/prev)*100)})
+                res.append({"ticker": s, "price": c, "change": ((c-prev)/prev)*100, "entry": (2*p)-hi, "target": (2*p)-lo, "abs": abs(((c-prev)/prev)*100)})
             except: continue
-        return pd.DataFrame(results).sort_values(by='abs', ascending=False).head(5).to_dict('records')
+        return pd.DataFrame(res).sort_values(by='abs', ascending=False).head(5).to_dict('records')
     except: return []
 
 # --- 6. INTERFACE ---
 st.title("🏛️ Sovereign Terminal | GT Edition")
-exch = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
+# Recommendation 4: Status Bar for Quota Tracking
+st.markdown(f"""
+    <div class="quota-bar">
+        ⚡ PROJECT QUOTA: {st.session_state.quota_remaining} / 20 REQUESTS REMAINING TODAY
+    </div>
+""", unsafe_allow_html=True)
+
+exch = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 tab_tactical, tab_research, tab_about = st.tabs(["⚡ Tactical", "🤖 AI Research", "📜 About"])
 
 with tab_tactical:
@@ -101,10 +123,7 @@ with tab_tactical:
         st.session_state.current_context = leader_ctx
     
     st.divider()
-    
-    # 🏛️ FIX: Search logic guarded to prevent false "Ticker not found"
     search = st.text_input("Strategic Search (Ticker):", key=f"s_{exch}").strip().upper()
-    
     if search:
         try:
             q_t = yf.Ticker(search); q_h = q_t.history(period="2d")
@@ -113,19 +132,21 @@ with tab_tactical:
                 piv = (hi + lo + prev) / 3
                 st.metric(label=search, value=f"{curr_sym}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
                 st.markdown(f"<div class='strike-zone-card'>Entry: {curr_sym}{(2*piv)-hi:.2f} | Target: {curr_sym}{(2*piv)-lo:.2f}</div>", unsafe_allow_html=True)
-            else:
-                st.error(f"Ticker '{search}' not found in {exch} data feed.")
-        except Exception:
-            st.error("Financial Data Service is temporarily unavailable.")
+            else: st.error(f"Ticker '{search}' not found.")
+        except: st.error("Feed error.")
 
 with tab_research:
     api_key = st.secrets.get("GEMINI_API_KEY")
     c1, c2 = st.columns([4, 1])
     with c1: st.write("### AI Research Desk")
     with c2: 
-        if st.button("🗑️ Clear Chat"): st.session_state.messages = []; st.rerun()
+        if st.button("🗑️ Reset Chat & Quota"): 
+            st.session_state.messages = []
+            st.session_state.quota_remaining = 20 # Manual override for testing
+            st.rerun()
 
-    suggestions = ["Analyze the leaders", "Define Strike Zone", "Trend Analysis"]
+    # Recommendation 2: Consolidated Suggestions
+    suggestions = ["Analyze all leaders at once", "Compare Strike Zones", "Full Market Trend"]
     s_cols = st.columns(3); clicked = None
     for idx, s in enumerate(suggestions):
         if s_cols[idx].button(s, use_container_width=True): clicked = s
@@ -142,18 +163,18 @@ with tab_research:
         with st.chat_message("assistant"):
             if not api_key: st.error("Missing API Key.")
             else:
-                with st.spinner("Processing resilient AI request..."):
+                with st.spinner("Analyzing tape (Conserving Quota)..."):
                     ans = generate_with_retry(final_query, st.session_state.current_context, api_key)
                     st.markdown(f"<div class='advisor-brief'>{ans}</div>", unsafe_allow_html=True)
                     st.session_state.messages.append({"role": "assistant", "content": ans})
 
 with tab_about:
-    st.write("### 🏛️ Sovereign Protocol & Features (v56.0)")
+    st.write("### 🏛️ Sovereign Protocol & Features (v57.0)")
     st.markdown("""
-    * **Search Guard:** Logic implemented to prevent "Ticker not found" error during state changes.
-    * **Exponential Backoff:** Integrated student-provided retry logic to handle `ResourceExhausted` errors.
-    * **Vedic Discovery:** Audits API aliases for content generators.
-    * **Stable Core:** Preserved v31.0 Tactical Engine and Student Optimization.
+    * **8B Model Variant:** Optimized for smaller, more efficient requests to avoid quota bans.
+    * **Response Caching:** AI results are cached to prevent accidental request duplication.
+    * **Quota Monitoring:** Real-time countdown of your project's 20-request daily bucket.
+    * **Consolidated Intelligence:** Research suggestions designed to analyze multiple tickers in a single call.
     """)
 
 st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. <b>USER RESPONSIBILITY:</b> GT students are solely responsible for their financial decisions.</div>""", unsafe_allow_html=True)
