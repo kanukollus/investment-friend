@@ -3,54 +3,99 @@ import pandas as pd
 import yfinance as yf
 import requests
 import google.generativeai as genai
-import time
 from google.api_core import exceptions
 
-# --- 1. ARCHITECTURAL CONFIG & THEME ---
+# --- 1. ARCHITECTURAL CONFIG & RESPONSIVE THEME ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    header, footer, .stDeployButton, [data-testid="stToolbar"] { visibility: hidden !important; height: 0; }
+    /* 1. Global UI Stealth - Precise targeting to avoid hiding the Disclaimer */
+    header, [data-testid="stToolbar"], [data-testid="stDecoration"] { 
+        visibility: hidden !important; height: 0 !important; 
+    }
+    
+    /* 2. Mobile & Desktop Color Correction (Fixes White-on-White text) */
     .stApp { background-color: #0d1117; color: #f0f6fc; }
-    [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; padding: 1.2rem !important; border-radius: 12px; }
-    .strike-zone-card { background-color: #010409; border: 1px solid #444c56; padding: 14px; border-radius: 10px; margin-top: 10px; font-family: monospace; }
-    .val-entry { color: #58a6ff; font-weight: bold; }
-    .val-target { color: #3fb950; font-weight: bold; }
-    .thesis-box { background-color: #161b22; border-left: 4px solid #58a6ff; padding: 15px; margin-top: 10px; border-radius: 0 8px 8px 0; font-size: 0.9rem; line-height: 1.6; }
-    .disclaimer-box { background-color: #1c1c1c; border: 1px solid #333; padding: 15px; border-radius: 8px; font-size: 0.75rem; color: #888; margin-top: 30px; }
+    
+    /* Force Button Text Visibility for Research Desk */
+    div[data-testid="stButton"] button {
+        background-color: #161b22 !important;
+        color: #f0f6fc !important;
+        border: 1px solid #30363d !important;
+    }
+    div[data-testid="stButton"] button:hover {
+        border-color: #58a6ff !important;
+        color: #58a6ff !important;
+    }
+
+    /* 3. Responsive Metric & Card Layouts */
+    [data-testid="stMetric"] { 
+        background-color: #161b22; 
+        border: 1px solid #30363d; 
+        padding: 1rem !important; 
+        border-radius: 12px;
+    }
+    [data-testid="stMetricLabel"] { font-size: 0.9rem !important; color: #8b949e !important; }
+    
+    .strike-zone-card { 
+        background-color: #010409; 
+        border: 1px solid #444c56; 
+        padding: 12px; 
+        border-radius: 10px; 
+        margin-top: 8px; 
+        font-family: monospace;
+    }
+    
+    /* 4. Mobile Refinements (< 768px) */
+    @media (max-width: 768px) {
+        div[data-testid="stMetricValue"] { font-size: 1.4rem !important; }
+        .thesis-box { font-size: 0.85rem !important; }
+        .disclaimer-box { font-size: 0.7rem !important; padding: 12px !important; }
+    }
+
+    /* 5. Fixed Disclaimer & Thesis Boxes */
+    .thesis-box { 
+        background-color: #161b22; 
+        border-left: 4px solid #58a6ff; 
+        padding: 15px; 
+        margin-top: 15px; 
+        border-radius: 0 8px 8px 0; 
+        font-size: 0.95rem; 
+        line-height: 1.6; 
+    }
+    
+    /* Explicitly visible disclaimer box */
+    .disclaimer-box { 
+        background-color: #1c1c1c !important; 
+        border: 1px solid #ff4b4b !important; 
+        padding: 20px !important; 
+        border-radius: 8px !important; 
+        font-size: 0.85rem !important; 
+        color: #ff4b4b !important; 
+        margin: 40px 0 !important; 
+        text-align: center !important;
+        display: block !important;
+        visibility: visible !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GLOBAL STATE GUARD ---
+# --- 2. GLOBAL STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 
-# --- 3. VEDIC DYNAMIC MODEL DISCOVERY (The Permanent Fix for 404) ---
+# --- 3. DYNAMIC MODEL DISCOVERY ---
 @st.cache_data(ttl=3600)
 def get_working_model(api_key):
     genai.configure(api_key=api_key)
     try:
         available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Professional Tier Choice: 1.5-Flash is most stable
         if 'models/gemini-1.5-flash' in available: return 'models/gemini-1.5-flash'
-        if 'models/gemini-1.5-flash-latest' in available: return 'models/gemini-1.5-flash-latest'
         return available[0]
-    except Exception:
-        return "models/gemini-1.5-flash"
+    except: return "models/gemini-1.5-flash"
 
-# --- 4. RESILIENT AI HANDLER ---
-def handle_ai_query(prompt, context, api_key):
-    model_name = get_working_model(api_key)
-    model = genai.GenerativeModel(model_name)
-    try:
-        full_prompt = f"Market Data: {context[:400]}\nQuery: {prompt}"
-        response = model.generate_content(full_prompt)
-        return response.text if response and hasattr(response, 'text') else "⚠️ No response generated."
-    except Exception as e:
-        return f"🚨 RAW ERROR: {str(e)}"
-
-# --- 5. DATA ENGINE ---
+# --- 4. DATA ENGINE ---
 @st.cache_data(ttl=600)
 def rank_movers(universe):
     idx = 1 if "India" in universe else 0
@@ -71,22 +116,23 @@ def rank_movers(universe):
         return pd.DataFrame(res).sort_values(by='abs', ascending=False).head(5).to_dict('records')
     except: return []
 
-# --- 6. MAIN UI ---
-st.title("🏛️ Sovereign Intelligence Terminal")
+# --- 5. INTERFACE ---
+st.title("🏛️ Sovereign Terminal")
 exch = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
-tab_tactical, tab_research, tab_about = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
+tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
 
-with tab_tactical:
+with tab_t:
     leaders = rank_movers(exch)
     curr = "₹" if "India" in exch else "$"
     if leaders:
+        # Use columns for desktop; Streamlit stacks them on mobile
+        cols = st.columns(len(leaders))
         leader_ctx = ""
-        cols = st.columns(5)
         for i, s in enumerate(leaders):
             with cols[i]:
                 st.metric(label=s['ticker'], value=f"{curr}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
-                st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr}{s['entry']:.2f}</span><br><span class='val-target'>Target: {curr}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='strike-zone-card'><span style='color:#58a6ff'>Entry: {curr}{s['entry']:.2f}</span><br><span style='color:#3fb950'>Target: {curr}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
                 leader_ctx += f"{s['ticker']}:{s['price']}; "
         st.session_state.current_context = leader_ctx
     
@@ -103,41 +149,47 @@ with tab_tactical:
                 st.markdown(f"<div class='strike-zone-card'>Entry: {curr}{(2*piv)-hi:.2f} | Target: {curr}{(2*piv)-lo:.2f}</div>", unsafe_allow_html=True)
                 if api_key:
                     with st.spinner("Generating Thesis..."):
-                        thesis = handle_ai_query(f"Provide 3-point bullish thesis for {search}", "", api_key)
-                        st.markdown(f"### 📈 Thesis: {search}")
-                        st.markdown(f"<div class='thesis-box'>{thesis}</div>", unsafe_allow_html=True)
-        except: st.error("Search failed.")
+                        model = genai.GenerativeModel(get_working_model(api_key))
+                        thesis = model.generate_content(f"3-point bullish thesis for {search}").text
+                        st.markdown(f"<div class='thesis-box'><b>📈 Thesis: {search}</b><br>{thesis}</div>", unsafe_allow_html=True)
+        except: st.error("Ticker not found.")
 
-with tab_research:
+with tab_r:
     api_key = st.secrets.get("GEMINI_API_KEY")
     if st.button("🗑️ Clear Intelligence"): st.session_state.messages = []; st.rerun()
-
-    # 🏛️ RESTORED: AI SUGGESTIONS
-    suggestions = ["Analyze current leaders", "Identify Strike Zones", "Market Rationale"]
-    s_cols = st.columns(3); clicked_s = None
-    for idx, s in enumerate(suggestions):
-        if s_cols[idx].button(s, use_container_width=True): clicked_s = s
+    
+    # Corrected Contrast Buttons
+    s_cols = st.columns(3); clicked = None
+    for idx, s in enumerate(["Analyze movers", "Strike Zones", "Trend Analysis"]):
+        if s_cols[idx].button(s, use_container_width=True): clicked = s
 
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.write(m["content"])
     
     prompt = st.chat_input("Ask Terminal...")
-    final_query = clicked_s if clicked_s else prompt
-
-    if final_query:
-        st.session_state.messages.append({"role": "user", "content": final_query})
-        with st.chat_message("user"): st.write(final_query)
+    final = clicked if clicked else prompt
+    if final:
+        st.session_state.messages.append({"role": "user", "content": final})
+        with st.chat_message("user"): st.write(final)
         with st.chat_message("assistant"):
-            if not api_key: st.error("API Key Missing.")
-            else:
-                ans = handle_ai_query(final_query, st.session_state.current_context, api_key)
-                st.markdown(ans)
-                st.session_state.messages.append({"role": "assistant", "content": ans})
+            model = genai.GenerativeModel(get_working_model(api_key))
+            ans = model.generate_content(f"Market: {st.session_state.current_context}\nQ: {final}").text
+            st.markdown(ans)
+            st.session_state.messages.append({"role": "assistant", "content": ans})
 
-with tab_about:
-    st.write("### 🏛️ Sovereign Protocol & Stability (v60.0)")
+with tab_a:
+    st.write("### 📜 Sovereign Protocol (v62.0)")
     st.markdown("""
-    * **404 Suppression:** Fixed hardcoded model strings to use dynamic discovery.
-    * **AI Suggestions:** Restored button-based research shortcuts.
-    * **Billing Tier:** Optimized for professional quotas (2,000 RPM).
+    * **Contrast Shield:** Overrides mobile browser defaults to fix white-on-white text issues.
+    * **Fluid Responsiveness:** Dynamic font scaling for metric values and labels on smaller screens.
+    * **Institutional Disclaimer:** Hard-coded visibility guard to prevent the disclaimer from being hidden.
     """)
+
+# 🏛️ GLOBAL INSTITUTIONAL DISCLAIMER (Locked visibility)
+st.markdown("""
+<div class="disclaimer-box">
+    <b>⚠️ INSTITUTIONAL RISK WARNING</b><br>
+    Trading involve significant risk. Past performance is not indicative of future results. 
+    Users are solely responsible for all financial decisions made using this terminal.
+</div>
+""", unsafe_allow_html=True)
