@@ -24,7 +24,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. VEDIC MODEL DISCOVERY ---
+# --- 2. GLOBAL STATE GUARD (Regression Fix for AttributeError) ---
+if "messages" not in st.session_state: 
+    st.session_state.messages = []
+if "current_context" not in st.session_state: 
+    st.session_state.current_context = ""
+
+# --- 3. VEDIC MODEL DISCOVERY ---
 def get_working_model(api_key):
     genai.configure(api_key=api_key)
     try:
@@ -38,27 +44,23 @@ def get_working_model(api_key):
         return available_models[0]
     except: return "models/gemini-1.5-flash"
 
-# --- 3. STABLE AI HANDLER (Fixed "None" Error) ---
+# --- 4. STABLE AI HANDLER ---
 def handle_ai_query(prompt, context, key):
     model_name = get_working_model(key)
     for attempt in range(3):
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(f"Context: {context[:400]}\nUser: {prompt}")
-            
-            # --- ARCHITECTURAL FIX: Explicitly return the text ---
             if response and response.text:
                 return response.text
-            else:
-                return "⚠️ API returned an empty response. Please retry."
+            return "⚠️ Empty response. Please retry."
         except Exception as e:
             if "429" in str(e):
-                time.sleep(3 ** attempt)
-                continue
+                time.sleep(3 ** attempt); continue
             return f"⚠️ Connection Error: {str(e)[:50]}..."
-    return "⚠️ Quota Exceeded. Please wait 60s."
+    return "⚠️ Quota Exceeded."
 
-# --- 4. DATA ENGINE (v31.0 Base) ---
+# --- 5. DATA ENGINE (v31.0 Base) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     idx = 1 if "India" in exchange_choice else 0
@@ -84,7 +86,7 @@ def rank_movers(exchange_choice):
         return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
     except: return []
 
-# --- 5. INTERFACE ---
+# --- 6. MAIN UI ---
 st.title("🏛️ Sovereign Intelligence Terminal")
 exchange_choice = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
@@ -127,6 +129,7 @@ with tab_research:
     for idx, s in enumerate(suggestions):
         if s_cols[idx].button(s, use_container_width=True): clicked = s
 
+    # Safe Loop: Only runs if st.session_state.messages was initialized by Guard
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.write(m["content"])
     
@@ -149,10 +152,10 @@ with tab_about:
     **Sovereign Intelligence Terminal (v31.0 Base)**
     
     #### ⚡ Tactical Features
+    * **State Guard Protection:** Architectural fix for AttributeError crashes during refreshes.
+    * **AI Return Logic:** Handshake verified to prevent "None" results.
     * **Vedic Model Discovery:** Corrected model handshake for `v1beta` support.
-    * **Logic Restoration:** Fixed "None" return error in AI Research Desk.
     * **Strategic Search:** Resetting search bar with integrated Entry/Target math.
-    * **Institutional Math:** Automated Floor Trader Pivot Points ($S1$/$R1$).
     """)
 
 st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. <b>USER RESPONSIBILITY:</b> You are solely responsible for your financial decisions.</div>""", unsafe_allow_html=True)
