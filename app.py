@@ -7,14 +7,14 @@ import google.generativeai as genai
 # 1. ELITE WHITELABEL & SECRETS CONFIG
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
-# Fetch Gemini API Key from Secrets
+# Securely fetch Gemini API Key from Streamlit Secrets
 GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 
 st.markdown("""
     <style>
-    /* Absolute Whitelabel: Hides all Streamlit branding */
+    /* Full Whitelabel: Hides all UI noise and Streamlit branding */
     header, footer, .stDeployButton, [data-testid="stToolbar"], [data-testid="stDecoration"] { 
         visibility: hidden !important; height: 0 !important; display: none !important; 
     }
@@ -28,24 +28,21 @@ st.markdown("""
     .strike-zone-card { background-color: #010409; border: 1px solid #444c56; padding: 14px; border-radius: 10px; margin-top: 10px; font-family: monospace; }
     .val-entry { color: #58a6ff; font-weight: bold; }
     .val-target { color: #3fb950; font-weight: bold; }
-    .val-stop { color: #f85149; font-weight: bold; }
     
-    .advisor-brief { background-color: #161b22; border-left: 4px solid #d29922; color: #e6edf3; padding: 12px; margin-top: 8px; font-size: 0.88rem; border-radius: 0 8px 8px 0; }
-    .stTabs [data-baseweb="tab-list"] { justify-content: center; }
+    .advisor-brief { background-color: #161b22; border-left: 4px solid #d29922; color: #e6edf3; padding: 12px; margin-top: 8px; border-radius: 0 8px 8px 0; font-size: 0.88rem; }
+    .stTabs [data-baseweb="tab-list"] { justify-content: center; border-bottom: 1px solid #30363d; }
     </style>
 """, unsafe_allow_html=True)
 
 # 2. THE VOLATILITY ENGINE (Absolute Global Sort)
 @st.cache_data(ttl=600)
 def rank_global_movers():
-    # Wikipedia Scraping with Browser Headers to avoid 403 Forbidden
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     headers = {"User-Agent": "Mozilla/5.0"}
     response = requests.get(url, headers=headers)
     symbols = pd.read_html(response.text)[0]['Symbol'].tolist()
     
-    # Stratified Sampling to bypass ABC order and find true volatility
-    sample = symbols[::12] 
+    sample = symbols[::12] # Sample across the index to bypass ABC order
     results = []
     for symbol in sample:
         try:
@@ -56,12 +53,10 @@ def rank_global_movers():
             piv = (h['High'].iloc[-2] + h['Low'].iloc[-2] + prev) / 3
             results.append({
                 "ticker": symbol, "price": curr, "change": ((curr-prev)/prev)*100,
-                "entry": (2*piv)-h['High'].iloc[-2], 
-                "target": (2*piv)-h['Low'].iloc[-2],
+                "entry": (2*piv)-h['High'].iloc[-2], "target": (2*piv)-h['Low'].iloc[-2],
                 "abs_change": abs(((curr-prev)/prev)*100)
             })
         except: continue
-    # Forced Volatility Ranking (Bypasses Alphabetical Order)
     return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
 
 # 3. INTERFACE TABS
@@ -86,9 +81,9 @@ with tab_tactical:
             """, unsafe_allow_html=True)
     
     st.divider()
-    # RESTORED UNIVERSAL SEARCH
+    # RESTORED GENERAL SEARCH OPTION
     st.write("### 🔍 Strategic Asset Search")
-    query = st.text_input("Deep-Dive any ticker (Zero Constraints):").upper()
+    query = st.text_input("Enter Ticker Symbol (e.g., TSLA, BTC-USD):").upper()
     if query:
         try:
             q_t = yf.Ticker(query)
@@ -99,18 +94,21 @@ with tab_tactical:
                 e, t = (2*piv)-q_h['High'].iloc[-2], (2*piv)-q_h['Low'].iloc[-2]
                 st.metric(label=query, value=f"${p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
                 st.markdown(f"<div class='strike-zone-card'>Entry: ${e:.2f} | Target: ${t:.2f}</div>", unsafe_allow_html=True)
-        except: st.error("Feed error.")
+        except: st.error("Ticker not found or feed error.")
 
 with tab_research:
     st.write("### AI Research Desk")
     if not GEMINI_KEY:
         st.error("Missing GEMINI_API_KEY in Secrets Settings.")
     else:
-        user_msg = st.chat_input("Ask Gemini about setups or market strategy...")
+        user_msg = st.chat_input("Ask Gemini about 'The Flush', 'S1 Levels', or 'Pivot Points'...")
         if user_msg:
             with st.chat_message("user"): st.write(user_msg)
             with st.chat_message("assistant"):
-                # FIXED: Updated model to 'gemini-2.0-flash' to resolve 404 NotFound error
-                model = genai.GenerativeModel('gemini-2.0-flash')
-                response = model.generate_content(f"You are a Senior Institutional Advisor. Explain: {user_msg}")
-                st.markdown(f"<div class='advisor-brief'>{response.text}</div>", unsafe_allow_html=True)
+                try:
+                    # Updated to gemini-2.0-flash to resolve sunsetting and rate limit issues
+                    model = genai.GenerativeModel('gemini-2.0-flash')
+                    response = model.generate_content(f"Institutional Advisor tone: {user_msg}")
+                    st.markdown(f"<div class='advisor-brief'>{response.text}</div>", unsafe_allow_html=True)
+                except Exception as e:
+                    st.error(f"AI Service Temporarily Offline: {e}")
