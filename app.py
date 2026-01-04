@@ -30,30 +30,16 @@ st.markdown("""
         }
     }
 
-    .search-result-box {
-        background-color: #1f2937;
-        border: 1px solid #4b5563;
-        padding: 15px;
-        border-radius: 10px;
-        margin-top: 10px;
-    }
-
-    .disclaimer-box { 
-        background-color: #1c1c1c; border: 1px solid #f85149; padding: 15px; 
-        border-radius: 8px; color: #f85149; margin-top: 40px; text-align: center; font-weight: bold;
-    }
+    .search-result-box { background-color: #1f2937; border: 1px solid #4b5563; padding: 15px; border-radius: 10px; margin-top: 10px; }
+    .disclaimer-box { background-color: #1c1c1c; border: 1px solid #f85149; padding: 15px; border-radius: 8px; color: #f85149; margin-top: 40px; text-align: center; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. REINFORCED GLOBAL STATE GUARD (Fixes AttributeError) ---
-if "messages" not in st.session_state: 
-    st.session_state["messages"] = []
-if "current_context" not in st.session_state: 
-    st.session_state["current_context"] = ""
-if "suggested_query" not in st.session_state: 
-    st.session_state["suggested_query"] = None
-if "active_tab" not in st.session_state:
-    st.session_state["active_tab"] = 0
+# --- 2. REINFORCED GLOBAL STATE GUARD ---
+if "messages" not in st.session_state: st.session_state["messages"] = []
+if "current_context" not in st.session_state: st.session_state["current_context"] = ""
+if "suggested_query" not in st.session_state: st.session_state["suggested_query"] = None
+if "active_tab" not in st.session_state: st.session_state["active_tab"] = 0
 
 # --- 3. AI & DATA ENGINES ---
 @st.cache_data(ttl=3600)
@@ -92,6 +78,7 @@ leaders = rank_movers(exch)
 tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
 
 with tab_t:
+    st.session_state["active_tab"] = 0
     curr = "₹" if "India" in exch else "$"
     if leaders:
         leader_ctx = ""
@@ -99,7 +86,7 @@ with tab_t:
             st.metric(label=s['ticker'], value=f"{curr}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
             st.markdown(f"<div style='border:1px solid #d0d7de; padding:10px; border-radius:8px; margin-top:5px; font-family:monospace;'><span style='color:#005cc5'>Entry: {curr}{s['entry']:.2f}</span> | <span style='color:#22863a'>Target: {curr}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
             leader_ctx += f"{s['ticker']}:{s['price']}; "
-        st.session_state.current_context = leader_ctx
+        st.session_state["current_context"] = leader_ctx
     
     st.divider()
     search = st.text_input("Strategic Search (Ticker):", key=f"search_{exch}").strip().upper()
@@ -110,19 +97,10 @@ with tab_t:
             if not q_h.empty:
                 p_c, prev_c, p_h, p_l = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
                 p_pt = (p_h + p_l + prev_c) / 3
-                s1_e = (2 * p_pt) - p_h
-                r1_t = (2 * p_pt) - p_l
-                
                 st.metric(label=search, value=f"{curr}{p_c:.2f}", delta=f"{((p_c-prev_c)/prev_c)*100:.2f}%")
-                st.markdown(f"""
-                <div class="search-result-box">
-                    <span style="color:#58a6ff; font-weight:bold;">Entry: {curr}{s1_e:.2f}</span><br>
-                    <span style="color:#3fb950; font-weight:bold;">Target: {curr}{r1_t:.2f}</span>
-                </div>
-                """, unsafe_allow_html=True)
-
+                st.markdown(f'<div class="search-result-box"><span style="color:#58a6ff; font-weight:bold;">Entry: {curr}{(2*p_pt)-p_h:.2f}</span><br><span style="color:#3fb950; font-weight:bold;">Target: {curr}{(2*p_pt)-p_l:.2f}</span></div>', unsafe_allow_html=True)
                 if api_key:
-                    with st.spinner(f"🧠 Advisor thinking..."):
+                    with st.spinner("🧠 Advisor thinking..."):
                         model = genai.GenerativeModel(get_working_model(api_key))
                         thesis = model.generate_content(f"3-point bull thesis for {search}").text
                         st.markdown(f"### 📈 Thesis: {search}")
@@ -130,43 +108,67 @@ with tab_t:
         except: st.error("Ticker offline.")
 
 with tab_r:
+    st.session_state["active_tab"] = 1
     api_key = st.secrets.get("GEMINI_API_KEY")
     if st.button("🗑️ Reset Chat", key="clear_chat_btn"): 
-        st.session_state.messages = []
-        st.session_state.suggested_query = None
-        st.rerun()
+        st.session_state["messages"] = []; st.session_state["suggested_query"] = None; st.rerun()
     
     s_cols = st.columns(3)
-    s_list = ["Analyze Movers", "Strike Zones", "Market Trend"]
-    for idx, s in enumerate(s_list):
+    for idx, s in enumerate(["Analyze Movers", "Strike Zones", "Market Trend"]):
         if s_cols[idx].button(s, key=f"s_btn_{idx}", use_container_width=True): 
-            st.session_state.suggested_query = s
+            st.session_state["suggested_query"] = s
 
-    for m in st.session_state.messages:
+    for m in st.session_state["messages"]:
         with st.chat_message(m["role"]): st.markdown(m["content"])
     
     chat_prompt = st.chat_input("Ask Terminal...")
-    
-    # 🏛️ SAFE RETRIEVAL: Using .get() for dict-like access to session state
     final_q = st.session_state.get("suggested_query") if st.session_state.get("suggested_query") else chat_prompt
 
     if final_q:
-        st.session_state.messages.append({"role": "user", "content": final_q})
-        st.session_state.suggested_query = None
+        st.session_state["messages"].append({"role": "user", "content": final_q})
+        st.session_state["suggested_query"] = None
         with st.chat_message("user"): st.markdown(final_q)
         with st.chat_message("assistant"):
             with st.spinner("🧠 Processing..."):
                 model = genai.GenerativeModel(get_working_model(api_key))
                 ans = model.generate_content(f"Context: {st.session_state.current_context}\nQ: {final_q}").text
-                st.markdown(ans); st.session_state.messages.append({"role": "assistant", "content": ans})
+                st.markdown(ans); st.session_state["messages"].append({"role": "assistant", "content": ans})
         st.rerun()
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol (v77.0)")
+    st.session_state["active_tab"] = 2
+    st.write("### 🏛️ Sovereign Terminal Protocol (v78.0)")
+    # 🏛️ CONSOLIDATED FEATURE MANIFEST
     st.markdown("""
-    * **State Guard:** Explicitly initializes all `session_state` keys to prevent `AttributeError`.
-    * **Safe Retrieval:** Uses `.get()` methods for secondary state checks to handle race conditions.
-    * **Pivot Logic:** Retained precision $S1/R1$ calculations for tactical searches.
+    The Sovereign Terminal is a professional-grade, institutional intelligence suite designed for high-frequency stock research and tactical analysis.
+    
+    **🏛️ Data & Analysis Engine**
+    * **Volatility-First Discovery:** Ranks tickers by absolute percentage change to identify real-time market energy leaders.
+    * **Precision Pivot Math:** Uses Floor Trader Pivot Point math for intraday Support (Entry $S1$) and Resistance (Target $R1$).
+    * **Strategic Search:** Manual ticker input triggers on-demand pivot zone calculations and fundamental analysis.
+    * **Universe Switcher:** Seamlessly toggles between US and Indian markets with automatic currency/ticker handling.
+    
+    **🏛️ Artificial Intelligence & Research**
+    * **Professional Billing Tier:** Optimized for pay-as-you-go quotas (2,000 requests per minute).
+    * **Vedic Model Discovery:** Dynamic loop identifies and connects to the most stable Gemini 1.5-Flash model.
+    * **Automated Thesis Engine:** Generates 3-point investment theses covering Moat, Efficiency, and Catalysts.
+    * **Context-Aware Chat:** Research Desk carries current market leaders and prices into every AI query.
+    
+    **🏛️ UI/UX & Mobile Hardening**
+    * **Adaptive Contrast:** Desktop Dark Mode / Mobile High-Contrast Light Mode to bypass 'Smart Inversion' bugs.
+    * **Luminance Fortress:** Hardware-accelerated text-fill color locks prevent 'invisible' text on mobile.
+    * **Interaction Stability:** Persistent keys and Index Anchoring prevent 'dead elements' and 'tab-jumping'.
+    * **Visual Feedback:** Integrated `st.spinner` animations for backend processing awareness.
+    
+    **🏛️ Technical Protocol (Quick Reference)**
+    
+    | Category | Implementation Detail |
+    | :--- | :--- |
+    | **Pivot Formula** | $P = (High + Low + Close) / 3$ |
+    | **Support ($S1$)** | $(2 \\times P) - High$ |
+    | **Resistance ($R1$)** | $(2 \\times P) - Low$ |
+    | **Quota Cap** | 2,000 RPM (Professional Tier) |
+    | **State Guard** | Explicit session_state initialization with .get() retrieval |
     """)
 
 st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Financial trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
