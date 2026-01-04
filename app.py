@@ -1,38 +1,157 @@
 import streamlit as st
+import pandas as pd
+import yfinance as yf
+import requests
 import google.generativeai as genai
 import time
+import random
 
-# --- 1. THE VEDIC MODEL DISCOVERY (FIXED) ---
+# --- 1. ARCHITECTURAL CONFIG & THEME ---
+st.set_page_config(page_title="Sovereign Terminal | GT Edition", layout="wide")
+
+st.markdown("""
+    <style>
+    header, footer, .stDeployButton, [data-testid="stToolbar"], [data-testid="stDecoration"] { 
+        visibility: hidden !important; height: 0 !important; display: none !important; 
+    }
+    .stApp { background-color: #0d1117; color: #f0f6fc; }
+    [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; padding: 1.2rem !important; border-radius: 12px; }
+    .strike-zone-card { background-color: #010409; border: 1px solid #444c56; padding: 14px; border-radius: 10px; margin-top: 10px; font-family: monospace; }
+    .val-entry { color: #58a6ff; font-weight: bold; }
+    .val-target { color: #3fb950; font-weight: bold; }
+    .advisor-brief { background-color: #161b22; border-left: 4px solid #d29922; color: #e6edf3; padding: 12px; margin-top: 8px; border-radius: 0 8px 8px 0; font-size: 0.88rem; }
+    .disclaimer-box { background-color: #1c1c1c; border: 1px solid #333; padding: 15px; border-radius: 8px; font-size: 0.75rem; color: #888; margin-top: 30px; }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- 2. GLOBAL STATE GUARD ---
+if "messages" not in st.session_state: st.session_state.messages = []
+if "current_context" not in st.session_state: st.session_state.current_context = ""
+
+# --- 3. VEDIC DYNAMIC MODEL DISCOVERY (Architect's Fix) ---
 @st.cache_data(ttl=3600)
-def get_student_optimized_model(api_key):
+def get_working_model(api_key):
+    """Audits the API to find the best available model for the current project tier."""
     genai.configure(api_key=api_key)
     try:
-        # Fetch the absolute latest list of what your specific key can access
+        # Fetch all models that support content generation
         available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        # Priority 1: Gemini 3 Flash (Your new Student Pro access)
-        if 'models/gemini-3-flash-preview' in available: return 'models/gemini-3-flash-preview'
-        
-        # Priority 2: Gemini 2.5 Flash (The current stable production model)
-        if 'models/gemini-2.5-flash' in available: return 'models/gemini-2.5-flash'
-        
-        # Priority 3: Gemini 1.5 Flash (Legacy fallback)
+        # Priority List: Flash 1.5 is the 'Stability King' for free tiers
         if 'models/gemini-1.5-flash' in available: return 'models/gemini-1.5-flash'
+        if 'models/gemini-1.5-flash-latest' in available: return 'models/gemini-1.5-flash-latest'
         
-        return available[0] # Dynamic fallback to whatever works
-    except:
-        return "models/gemini-1.5-flash" # Absolute fallback
+        # Fallback to any available non-experimental model
+        for m in available:
+            if 'exp' not in m and '2.0' not in m: return m
+        return available[0]
+    except Exception:
+        # Absolute fallback to standard naming
+        return "models/gemini-1.5-flash"
 
-# --- 2. THE AI HANDLER (FIXED) ---
+# --- 4. STABLE AI HANDLER ---
 def handle_ai_query(prompt, context, key):
-    # Discovery step ensures we never hardcode a broken model name
-    model_name = get_student_optimized_model(key)
+    # Dynamic discovery ensures we never call a 404 missing model
+    model_name = get_working_model(key)
+    
     try:
         model = genai.GenerativeModel(model_name)
-        # Use the standard generate_content method
-        response = model.generate_content(f"Context: {context[:400]}\nUser: {prompt}")
+        # Context truncation to stay under token limits
+        response = model.generate_content(f"Tape Snapshot: {context[:400]}\nQuery: {prompt}")
         if response and hasattr(response, 'text'):
             return response.text
-        return "🚨 Model returned empty response (Check safety filters)."
+        return "⚠️ Safety Trigger: Response blocked by Gemini filters."
     except Exception as e:
         return f"🚨 RAW ERROR: {str(e)}"
+
+# --- 5. DATA ENGINE (v31.0 Base - Stable) ---
+@st.cache_data(ttl=600)
+def rank_movers(universe):
+    idx = 1 if "India" in universe else 0
+    url = "https://en.wikipedia.org/wiki/NIFTY_50" if idx == 1 else "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        resp = requests.get(url, headers=headers)
+        syms = pd.read_html(resp.text)[idx]['Symbol'].tolist()
+        if idx == 1: syms = [s + ".NS" for s in syms]
+        
+        results = []
+        for s in syms[::max(1, len(syms)//40)]:
+            try:
+                t = yf.Ticker(s); h = t.history(period="2d")
+                if len(h) < 2: continue
+                c, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
+                p = (hi + lo + prev) / 3
+                results.append({"ticker": s, "price": c, "change": ((c-prev)/prev)*100, "entry": (2*p)-hi, "target": (2*p)-lo, "abs": abs(((c-prev)/prev)*100)})
+            except: continue
+        return pd.DataFrame(results).sort_values(by='abs', ascending=False).head(5).to_dict('records')
+    except: return []
+
+# --- 6. INTERFACE ---
+st.title("🏛️ Sovereign Terminal | Student Edition")
+exch = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
+
+tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 AI Research", "📜 About"])
+
+with tab_t:
+    leaders = rank_movers(exch)
+    sym = "₹" if "India" in exch else "$"
+    if leaders:
+        leader_ctx = ""
+        cols = st.columns(5)
+        for i, s in enumerate(leaders):
+            with cols[i]:
+                st.metric(label=s['ticker'], value=f"{sym}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
+                st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {sym}{s['entry']:.2f}</span><br><span class='val-target'>Target: {sym}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
+                leader_ctx += f"{s['ticker']}:{s['price']}; "
+        st.session_state.current_context = leader_ctx
+    
+    st.divider()
+    search = st.text_input("Strategic Search (Ticker):", key=f"s_{exch}").upper()
+    if search:
+        try:
+            q_t = yf.Ticker(search); q_h = q_t.history(period="2d")
+            p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
+            piv = (hi + lo + prev) / 3
+            st.metric(label=search, value=f"{sym}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
+            st.markdown(f"<div class='strike-zone-card'>Entry: {sym}{(2*piv)-hi:.2f} | Target: {sym}{(2*piv)-lo:.2f}</div>", unsafe_allow_html=True)
+        except: st.error("Ticker not found.")
+
+with tab_r:
+    api_key = st.secrets.get("GEMINI_API_KEY")
+    c1, c2 = st.columns([4, 1])
+    with c1: st.write("### AI Research Desk")
+    with c2: 
+        if st.button("🗑️ Clear Chat"): st.session_state.messages = []; st.rerun()
+
+    suggestions = ["Analyze the leaders", "Define Strike Zone", "Market Trend?"]
+    s_cols = st.columns(3); clicked = None
+    for idx, s in enumerate(suggestions):
+        if s_cols[idx].button(s, use_container_width=True): clicked = s
+
+    for m in st.session_state.messages:
+        with st.chat_message(m["role"]): st.write(m["content"])
+    
+    prompt = st.chat_input("Analyze the tape...")
+    final_query = clicked if clicked else prompt
+
+    if final_query:
+        st.session_state.messages.append({"role": "user", "content": final_query})
+        with st.chat_message("user"): st.write(final_query)
+        with st.chat_message("assistant"):
+            if not api_key: st.error("Missing API Key.")
+            else:
+                ans = handle_ai_query(final_query, st.session_state.current_context, api_key)
+                st.markdown(f"<div class='advisor-brief'>{ans}</div>", unsafe_allow_html=True)
+                st.session_state.messages.append({"role": "assistant", "content": ans})
+
+with tab_about:
+    st.write("### 🏛️ Sovereign Protocol & Features (v53.0)")
+    st.markdown("""
+    * **Vedic Model Discovery:** System audits API aliases to find valid content generators.
+    * **Student Optimization:** Locks onto **Gemini 1.5 Flash** to leverage the 1,500 requests/day student-friendly quota.
+    * **Strategic Search:** Integrated Entry/Target math with universe-aware auto-clearing.
+    * **State Persistence:** Global guard prevents AttributeError crashes during refreshes.
+    """)
+
+st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. <b>USER RESPONSIBILITY:</b> GT students are solely responsible for their financial decisions.</div>""", unsafe_allow_html=True)
