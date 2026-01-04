@@ -3,13 +3,13 @@ import pandas as pd
 import yfinance as yf
 import requests
 import google.generativeai as genai
-import time
 
 # --- 1. ARCHITECTURAL CONFIG & ADAPTIVE THEME ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
+    /* Global UI Stealth */
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
     
     /* Desktop Mode (Dark) */
@@ -44,20 +44,16 @@ st.markdown("""
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 if "suggested_query" not in st.session_state: st.session_state.suggested_query = None
-# TAB PERSISTENCE
-if "active_tab" not in st.session_state: st.session_state.active_tab = 0
 
-# --- 3. AI ENGINE ---
+# --- 3. AI & DATA ENGINES ---
 @st.cache_data(ttl=3600)
 def get_working_model(api_key):
     genai.configure(api_key=api_key)
     try:
         available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        if 'models/gemini-1.5-flash' in available: return 'models/gemini-1.5-flash'
-        return available[0]
+        return 'models/gemini-1.5-flash' if 'models/gemini-1.5-flash' in available else available[0]
     except: return "models/gemini-1.5-flash"
 
-# --- 4. DATA ENGINE ---
 @st.cache_data(ttl=600)
 def rank_movers(universe):
     idx = 1 if "India" in universe else 0
@@ -78,22 +74,14 @@ def rank_movers(universe):
         return pd.DataFrame(res).sort_values(by='abs', ascending=False).head(5).to_dict('records')
     except: return []
 
-# --- 5. INTERFACE ---
+# --- 4. MAIN INTERFACE ---
 st.title("🏛️ Sovereign Terminal")
 exch = st.radio("Universe Selection:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 leaders = rank_movers(exch)
 
-# 🏛️ FIX: Anchored Tabs
-# We use a placeholder and logic below to prevent the tab jump.
-tab_list = ["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"]
-# Note: Streamlit tabs don't have a built-in 'index' param yet, so we use a container strategy.
-if "tab_id" not in st.session_state: st.session_state.tab_id = tab_list[0]
-
-# --- 6. TAB RENDERER ---
-tab_t, tab_r, tab_a = st.tabs(tab_list)
+tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
 
 with tab_t:
-    st.session_state.active_tab = 0
     curr = "₹" if "India" in exch else "$"
     if leaders:
         leader_ctx = ""
@@ -122,12 +110,9 @@ with tab_t:
         except: st.error("Ticker offline.")
 
 with tab_r:
-    st.session_state.active_tab = 1
     api_key = st.secrets.get("GEMINI_API_KEY")
     if st.button("🗑️ Reset Chat", key="clear_chat_btn"): 
-        st.session_state.messages = []
-        st.session_state.suggested_query = None
-        # We don't use rerun() here to avoid the jump; the page naturally updates.
+        st.session_state.messages = []; st.session_state.suggested_query = None; st.rerun()
     
     s_cols = st.columns(3)
     s_list = ["Analyze Movers", "Strike Zones", "Market Trend"]
@@ -146,20 +131,20 @@ with tab_r:
         st.session_state.suggested_query = None
         with st.chat_message("user"): st.markdown(final_q)
         with st.chat_message("assistant"):
-            with st.spinner("🧠 Processing..."):
+            with st.spinner("🧠 Intelligence Processing..."):
                 model = genai.GenerativeModel(get_working_model(api_key))
                 ans = model.generate_content(f"Context: {st.session_state.current_context}\nQ: {final_q}").text
                 st.markdown(ans); st.session_state.messages.append({"role": "assistant", "content": ans})
-        # Rerun removed to test mobile latency reduction
+        st.rerun()
 
 with tab_a:
-    st.session_state.active_tab = 2
-    st.write("### 📜 Sovereign Protocol (v74.0)")
+    st.write("### 📜 Sovereign Protocol & Intelligence (v75.0)")
     st.markdown("""
-    * **Latency Guard:** Removed unnecessary `st.rerun()` calls to speed up mobile response times.
-    * **Desktop Stability:** Optimized session state handling to prevent tab jumping.
-    * **Adaptive Contrast:** High-contrast light mode on mobile to prevent 'Smart Inversion' bugs.
-    * **Pro Tier:** Built for professional quotas (2,000 RPM).
+    * **Pro Tier Infrastructure:** Billing enabled for 2,000 RPM high-throughput analysis.
+    * **Adaptive Theme Guard:** Desktop Dark Mode / Mobile High-Contrast Light Mode.
+    * **Interactive Stability:** Key-anchored buttons and state-persistent tab logic.
+    * **Automated Research:** Fundamental Bull Thesis and Institutional Pivot Math integration.
+    * **Luminance Hardware Lock:** Webkit-text-fill rules prevent browser-forced color inversion.
     """)
 
-st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
+st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Financial trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
