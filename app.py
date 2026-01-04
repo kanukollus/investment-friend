@@ -11,16 +11,27 @@ st.set_page_config(page_title="Sovereign Intelligence Terminal", layout="wide")
 
 st.markdown("""
     <style>
+    /* Absolute Whitelabel: Hides all Streamlit branding */
     header, footer, .stDeployButton, [data-testid="stToolbar"], [data-testid="stDecoration"] { 
         visibility: hidden !important; height: 0 !important; display: none !important; 
     }
     .stApp { background-color: #0d1117; color: #f0f6fc; }
-    [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; }
+    
+    /* Metrics & Tactical Signal Cards */
+    [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; padding: 1.2rem !important; border-radius: 12px; }
+    [data-testid="stMetricLabel"] { color: #8b949e !important; font-size: 0.95rem !important; }
+    [data-testid="stMetricValue"] { color: #ffffff !important; font-weight: 800 !important; }
+
     .strike-zone-card { background-color: #010409; border: 1px solid #444c56; padding: 14px; border-radius: 10px; margin-top: 10px; font-family: monospace; }
     .val-entry { color: #58a6ff; font-weight: bold; }
     .val-target { color: #3fb950; font-weight: bold; }
     .val-range { color: #8b949e; font-size: 0.75rem; font-family: monospace; }
+    
     .advisor-brief { background-color: #161b22; border-left: 4px solid #d29922; color: #e6edf3; padding: 12px; margin-top: 8px; border-radius: 0 8px 8px 0; font-size: 0.88rem; }
+    .stTabs [data-baseweb="tab-list"] { justify-content: center; border-bottom: 1px solid #30363d; }
+    
+    /* Disclaimer Styling */
+    .disclaimer-box { background-color: #1c1c1c; border: 1px solid #333; padding: 15px; border-radius: 8px; font-size: 0.75rem; color: #888; margin-top: 30px; line-height: 1.4; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -48,9 +59,9 @@ def handle_ai_query(prompt, context, key):
             if "429" in str(e) and attempt < 2:
                 time.sleep((attempt + 1) * 3)
                 continue
-            return "⚠️ Quota Exceeded. Please wait 60s for the reset."
+            return "⚠️ Quota Exceeded. Please wait 60s."
 
-# --- 4. DATA ENGINE (With KeyError Guard) ---
+# --- 4. DATA ENGINE (Multi-Exchange & Full Profile) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     if exchange_choice == "India (Nifty 50)":
@@ -68,8 +79,7 @@ def rank_movers(exchange_choice):
     results = []
     for symbol in sample:
         try:
-            t = yf.Ticker(symbol)
-            h = t.history(period="2d")
+            t = yf.Ticker(symbol); h = t.history(period="2d")
             if len(h) < 2: continue
             info = t.info
             curr, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
@@ -82,25 +92,21 @@ def rank_movers(exchange_choice):
                 "abs_change": abs(((curr-prev)/prev)*100)
             })
         except: continue
-    
-    # ⚠️ KEYERROR GUARD: Return empty list if no data was found
     if not results: return []
-    
-    df = pd.DataFrame(results)
-    return df.sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
+    return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
 
 # --- 5. UI INTERFACE ---
 st.title("🏛️ Sovereign Intelligence Terminal")
 exchange_choice = st.radio("Exchange Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
-tab_tactical, tab_research = st.tabs(["⚡ Tactical Terminal", "🤖 AI Research Desk"])
+# THE TABS
+tab_tactical, tab_research, tab_about = st.tabs(["⚡ Tactical Terminal", "🤖 AI Research Desk", "📜 What is this app?"])
 
 with tab_tactical:
     st.write(f"### {exchange_choice} Volatility Leaders")
     leaders = rank_movers(exchange_choice)
-    
     if not leaders:
-        st.warning("No market data available for current sample. Refreshing in 60s...")
+        st.warning("No market data available. Refreshing...")
     else:
         leader_context = f"Leaders in {exchange_choice}: "
         cols = st.columns(5)
@@ -109,8 +115,6 @@ with tab_tactical:
                 status = "⚠️ OVEREXTENDED" if stock['price'] > stock['target'] else "✅ STRIKE ZONE"
                 curr_sym = "₹" if "India" in exchange_choice else "$"
                 st.metric(label=stock['ticker'], value=f"{curr_sym}{stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
-                
-                # Full Profile Tactical Card
                 st.markdown(f"""
                     <div class="strike-zone-card">
                         <b style="color:#8b949e; font-size:0.65rem; display:block; margin-bottom:5px;">{stock['name'][:25]}</b>
@@ -126,7 +130,7 @@ with tab_tactical:
 
     st.divider()
     st.write("### 🔍 Strategic Asset Search")
-    query = st.text_input("Deep-Dive Ticker (e.g. RELIANCE.NS, TSLA):").upper()
+    query = st.text_input("Deep-Dive any ticker (e.g. RELIANCE.NS, TSLA):").upper()
     if query:
         try:
             q_t = yf.Ticker(query); q_h = q_t.history(period="2d"); q_i = q_t.info
@@ -150,24 +154,63 @@ with tab_research:
         if st.button("🗑️ Clear History"):
             st.session_state.messages = []; st.rerun()
 
-    suggestions = ["Explain the leaders", "What is Strike Zone?", "Nifty 50 Trend?"]
-    s_cols = st.columns(3); clicked = None
-    for idx, s in enumerate(suggestions):
-        if s_cols[idx].button(s, use_container_width=True): clicked = s
-
     api_key = st.secrets.get("GEMINI_API_KEY")
     if api_key:
+        # Suggestions
+        suggestions = ["Explain the leaders", "What is Strike Zone?", "Nifty 50 Trend?"]
+        s_cols = st.columns(3); clicked = None
+        for idx, s in enumerate(suggestions):
+            if s_cols[idx].button(s, use_container_width=True): clicked = s
+
         for m in st.session_state.messages:
             with st.chat_message(m["role"]): st.write(m["content"])
         
-        prompt = st.chat_input("Ask about the tape...")
+        prompt = st.chat_input("Analyze the tape...")
         final_query = prompt if prompt else clicked
         if final_query:
             st.session_state.messages.append({"role": "user", "content": final_query})
             with st.chat_message("user"): st.write(final_query)
             with st.chat_message("assistant"):
-                with st.spinner("Analyzing market structure..."):
+                with st.spinner("Reviewing tape..."):
                     context = "Role: Senior Institutional Advisor. Context: " + st.session_state.current_context
                     ans = handle_ai_query(final_query, context, api_key)
                     st.markdown(f"<div class='advisor-brief'>{ans}</div>", unsafe_allow_html=True)
                     st.session_state.messages.append({"role": "assistant", "content": ans})
+
+with tab_about:
+    st.markdown("""
+    ### 🏛️ Institutional Protocol & Features
+    The Sovereign Intelligence Terminal (v31.0) is an institutional-grade, zero-hardcode market analysis suite designed for the 2026 trading landscape.
+    
+    #### ⚡ Core Tactical Features
+    * **Dynamic Market Discovery:** Real-time scrape of the S&P 500 (US) or Nifty 50 (India) without static ticker pools.
+    * **Volatility-First Ranking:** Stratified scan identifying leaders by absolute magnitude of percentage change.
+    * **Institutional Pivot Math:** Every asset is analyzed via floor-trader pivot points:
+        - **Entry (S1):** Calculated institutional defense level.
+        - **Target (R1):** Resistance ceiling for profit-taking.
+        - **Stop Loss:** Hardcoded 1.5% safety net from Entry.
+    * **Full Security Profiling:** Identity names and 52-Week High/Low data for all assets.
+    * **Universal Strategic Search:** Zero-constraint search bar for Equities, Crypto, and Global Stocks.
+    
+    #### 🤖 AI Research Desk (Stability Optimized)
+    * **Vedic-Style Contextual Intelligence:** AI receives live serialized snapshots of terminal data for institutional accuracy.
+    * **Dynamic Model Discovery:** Audits available models to prioritize high-throughput engines like Gemini 1.5 Flash.
+    * **Advanced Rate-Limit Guard:** Exponential Backoff and Pro-active Throttling to handle 429 "Resource Exhausted" errors.
+    
+    #### 📱 Whitelabel UI & Infrastructure
+    * **Stealth Branding:** Custom CSS removes all Streamlit headers, toolbars, and "Deploy" icons.
+    * **OLED Contrast Theme:** High-contrast palette optimized for mobile and outdoor readability.
+    * **Global Exchange Switching:** Instant toggle between US ($) and India (₹) with automatic ticker normalization.
+    """)
+
+# --- GLOBAL DISCLAIMER FOOTER ---
+st.markdown("""
+    <div class="disclaimer-box">
+        <b>⚠️ INSTITUTIONAL DISCLAIMER:</b> This terminal is for informational and educational purposes only. 
+        It does not constitute financial, investment, or legal advice. All trading involves substantial risk of loss. 
+        Calculations are based on historical data and do not guarantee future performance. 
+        <b>USER RESPONSIBILITY:</b> By using this application, you acknowledge that you are solely responsible 
+        for your own investment decisions and any resulting financial actions. The developers of this terminal 
+        accept no liability for any losses or damages incurred.
+    </div>
+""", unsafe_allow_html=True)
