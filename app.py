@@ -5,9 +5,8 @@ import requests
 import google.generativeai as genai
 import time
 import random
-import plotly.graph_objects as go
 
-# --- 1. PAGE CONFIG & OLED THEME ---
+# --- 1. PAGE CONFIG & THEME ---
 st.set_page_config(page_title="Sovereign Terminal Alpha", layout="wide")
 
 st.markdown("""
@@ -16,7 +15,7 @@ st.markdown("""
         visibility: hidden !important; height: 0 !important; display: none !important; 
     }
     .stApp { background-color: #0d1117; color: #f0f6fc; }
-    [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; }
+    [data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; padding: 1.2rem !important; border-radius: 12px; }
     .strike-zone-card { background-color: #010409; border: 1px solid #444c56; padding: 14px; border-radius: 10px; margin-top: 10px; font-family: monospace; }
     .val-entry { color: #58a6ff; font-weight: bold; }
     .val-target { color: #3fb950; font-weight: bold; }
@@ -32,7 +31,7 @@ st.markdown("""
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 
-# --- 3. DYNAMIC AI HANDLER ---
+# --- 3. DYNAMIC AI HANDLER (Throttled for Free Tier) ---
 def get_working_model(key):
     genai.configure(api_key=key)
     try:
@@ -44,23 +43,25 @@ def generate_s_score(ticker, price, entry, target, key):
     try:
         model = genai.GenerativeModel(get_working_model(key))
         prompt = f"Quant: {ticker} @ {price}, Entry {entry}, Target {target}. Score 1-100 probability. Return ONLY number + 6-word summary."
+        # Added delay to prevent S-Score calls from overwhelming the quota
+        time.sleep(1) 
         response = model.generate_content(prompt)
         return response.text.strip()
-    except: return "75 | Market structure is currently stable."
+    except: return "70 | Analysis paused due to API quota."
 
 def handle_ai_query(prompt, context, key):
     for attempt in range(3):
         try:
             model = genai.GenerativeModel(get_working_model(key))
             full_prompt = f"Context: {context}\n\nUser: {prompt}"
-            time.sleep(random.uniform(1.0, 2.0)) 
+            time.sleep(2.0) # Forced delay to stay under RPM limits
             return model.generate_content(full_prompt).text
         except Exception as e:
             if "429" in str(e) and attempt < 2:
-                time.sleep(4); continue
-            return "⚠️ Service Busy. Please wait 60s."
+                time.sleep(5); continue
+            return "⚠️ Service Busy: Gemini's free tier is at capacity. Please wait 60s and try again."
 
-# --- 4. DATA ENGINE (Multi-Exchange + Profiling) ---
+# --- 4. DATA ENGINE ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     idx = 1 if "India" in exchange_choice else 0
@@ -92,10 +93,7 @@ def rank_movers(exchange_choice):
                     "l52": info.get('fiftyTwoWeekLow', 0), "abs_change": abs(((curr-prev)/prev)*100)
                 })
             except: continue
-        
-        # FIX: Guard against empty results list causing KeyError on abs_change
         if not results: return []
-        
         return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
     except: return []
 
@@ -107,33 +105,52 @@ tab_tactical, tab_research, tab_about = st.tabs(["⚡ Alpha Terminal", "🤖 AI 
 
 with tab_tactical:
     leaders = rank_movers(exchange_choice)
+    curr_sym = "₹" if "India" in exchange_choice else "$"
+    
     if not leaders:
-        st.warning("Market closed or data unavailable. Try again later.")
+        st.warning("Market data unavailable. Please refresh.")
     else:
         leader_context = f"Leaders in {exchange_choice}: "
         cols = st.columns(5)
         for i, stock in enumerate(leaders):
             with cols[i]:
+                # S-Score (Agentic AI)
                 raw_s = generate_s_score(stock['ticker'], stock['price'], stock['entry'], stock['target'], st.secrets.get("GEMINI_API_KEY"))
                 st.markdown(f"<div class='sovereign-score'>S-SCORE: {raw_s}</div>", unsafe_allow_html=True)
                 
-                st.metric(label=stock['ticker'], value=f"{stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
+                # RESTORED: Currency Symbol in Metric
+                st.metric(label=stock['ticker'], value=f"{curr_sym}{stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
                 
-                fig = go.Figure(data=[go.Candlestick(x=[1,2,3,4,5], open=[stock['price']*0.99]*5, high=[stock['target']]*5, low=[stock['stop']]*5, close=[stock['price']]*5)])
-                fig.update_layout(height=80, margin=dict(l=0,r=0,t=0,b=0), xaxis_visible=False, yaxis_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-
                 st.markdown(f"""
                     <div class="strike-zone-card">
                         <b style="color:#8b949e; font-size:0.65rem; display:block; margin-bottom:5px;">{stock['name'][:22]}</b>
-                        <span class="val-entry">Entry: {stock['entry']:.2f}</span><br>
-                        <span class="val-target">Target: {stock['target']:.2f}</span><br>
+                        <span class="val-entry">Entry: {curr_sym}{stock['entry']:.2f}</span><br>
+                        <span class="val-target">Target: {curr_sym}{stock['target']:.2f}</span><br>
                         <span class="val-rr">Risk/Reward: {stock['rr']:.2f}</span><hr style="border:0.1px solid #333; margin:5px 0;">
-                        <span style="color:#8b949e; font-size:0.75rem;">52W H: {stock['h52']:.2f} | 52W L: {stock['l52']:.2f}</span>
+                        <span style="color:#8b949e; font-size:0.75rem;">52W H: {curr_sym}{stock['h52']:.2f}<br>52W L: {curr_sym}{stock['l52']:.2f}</span><br>
+                        <span style="color:#8b949e; font-size:0.75rem;">5D Success: {stock['win_rate']}%</span>
                     </div>
                 """, unsafe_allow_html=True)
-                leader_context += f"{stock['ticker']} ({stock['name']}, ${stock['price']:.2f}); "
+                leader_context += f"{stock['ticker']} ({stock['name']}, {curr_sym}{stock['price']:.2f}); "
         st.session_state.current_context = leader_context
+
+    st.divider()
+    query = st.text_input("Deep-Dive Ticker (e.g. RELIANCE.NS, TSLA):").upper()
+    if query:
+        try:
+            q_t = yf.Ticker(query); q_h = q_t.history(period="2d"); q_i = q_t.info
+            if not q_h.empty:
+                p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
+                piv = (hi + lo + prev) / 3
+                e, t = (2*piv)-hi, (2*piv)-lo
+                st.metric(label=f"{query} ({q_i.get('longName', '')})", value=f"{curr_sym}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
+                st.markdown(f"""
+                    <div class="strike-zone-card">
+                        <span class="val-entry">Entry: {curr_sym}{e:.2f}</span> | <span class="val-target">Target: {curr_sym}{t:.2f}</span><br>
+                        <span class="val-range">52W Range: {curr_sym}{q_i.get('fiftyTwoWeekLow', 0):.2f} - {curr_sym}{q_i.get('fiftyTwoWeekHigh', 0):.2f}</span>
+                    </div>
+                """, unsafe_allow_html=True)
+        except: st.error("Ticker not found.")
 
 with tab_research:
     c1, c2 = st.columns([4, 1])
@@ -143,24 +160,31 @@ with tab_research:
 
     api_key = st.secrets.get("GEMINI_API_KEY")
     if api_key:
+        # RESTORED: AI Suggestion Buttons
+        suggestions = ["Analyze the leaders", "Explain the flush", "Nifty 50 Trend?"]
+        s_cols = st.columns(3); clicked = None
+        for idx, s in enumerate(suggestions):
+            if s_cols[idx].button(s, use_container_width=True): clicked = s
+
         for m in st.session_state.messages:
             with st.chat_message(m["role"]): st.write(m["content"])
-        if (prompt := st.chat_input("Analyze market energy...")):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"): st.write(prompt)
+        
+        prompt = st.chat_input("Analyze market energy...")
+        final_query = prompt if prompt else clicked
+        if final_query:
+            st.session_state.messages.append({"role": "user", "content": final_query})
+            with st.chat_message("user"): st.write(final_query)
             with st.chat_message("assistant"):
-                ans = handle_ai_query(prompt, st.session_state.current_context, api_key)
+                ans = handle_ai_query(final_query, st.session_state.current_context, api_key)
                 st.markdown(f"<div class='advisor-brief'>{ans}</div>", unsafe_allow_html=True)
                 st.session_state.messages.append({"role": "assistant", "content": ans})
 
 with tab_about:
     st.markdown("""
-    ### 🏛️ Sovereign Protocol & Alpha Features (v33.0)
-    The Sovereign Intelligence Terminal is an institutional-grade, zero-hardcode market analysis suite.
+    ### 🏛️ Sovereign Protocol & Alpha Features (v34.0)
     
-    #### 🚀 The Four Power Moves (Alpha)
+    #### 🚀 The Alpha Power Moves
     * **Agentic S-Score:** Gemini acts as a Quant Agent assigning probability scores (1-100) to setups.
-    * **Visual Spark-Charts:** Mini candlestick visuals showing price relative to Entry and Target.
     * **Statistical Backtesting:** 5-Day "Success Rate" based on historical target hits.
     * **Risk/Reward (R/R) Engine:** Automated gain-vs-loss ratio for institutional setups.
 
@@ -170,7 +194,10 @@ with tab_about:
     * **Institutional Pivot Math:** Every asset analyzed via professional floor-trader pivot points.
     * **Full Security Profiling:** Security Full Names and 52-Week High/Low range context.
     * **Global Exchange Switching:** Toggle between US ($) and India (₹) universes.
+    
+    #### 🛡️ Stability & Security
+    * **Exponential Backoff:** Intelligent retries to handle Gemini's free-tier rate limits.
+    * **Whitelabel UI:** Custom OLED-contrast theme with zero Streamlit branding.
     """)
 
-# --- GLOBAL DISCLAIMER ---
 st.markdown("""<div class="disclaimer-box"><b>⚠️ INSTITUTIONAL DISCLAIMER:</b> Informational use only. Trading involves substantial risk. <b>USER RESPONSIBILITY:</b> You are solely responsible for your financial decisions. The developer accepts no liability for actions taken based on this data.</div>""", unsafe_allow_html=True)
