@@ -24,26 +24,49 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SESSION STATE ---
+# --- 2. VEDIC MODEL DISCOVERY (The Fix) ---
+def get_working_model(api_key):
+    """Exactly like the Vedic app: Audits API to find a supported model."""
+    genai.configure(api_key=api_key)
+    try:
+        # Fetch all available models from the API
+        available_models = [
+            m.name for m in genai.list_models() 
+            if 'generateContent' in m.supported_generation_methods
+        ]
+        # Priority 1: Flash 1.5 (Standard)
+        if 'models/gemini-1.5-flash' in available_models:
+            return 'models/gemini-1.5-flash'
+        # Priority 2: Any 1.5 Flash variant
+        for m in available_models:
+            if 'flash' in m: return m
+        # Fallback: The first available content generator
+        return available_models[0]
+    except Exception as e:
+        # Hard fallback if discovery fails
+        return "models/gemini-1.5-flash"
+
+# --- 3. SESSION STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 
-# --- 3. STABLE AI HANDLER ---
+# --- 4. STABLE AI HANDLER ---
 def handle_ai_query(prompt, context, key):
-    genai.configure(api_key=key)
+    # Discovery step before every call (Vedic Logic)
+    model_name = get_working_model(key)
+    
     for attempt in range(3):
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(f"Context: {context[:300]}\nUser: {prompt}")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(f"Context: {context[:400]}\nUser: {prompt}")
             return response.text
         except Exception as e:
             if "429" in str(e):
-                time.sleep(2 ** attempt)
+                time.sleep(3 ** attempt)
                 continue
-            # return "⚠️ Quota limited. Please wait 30s."
-            return e
+            return f"⚠️ Model Error: {str(e)[:50]}... Please check API key."
 
-# --- 4. DATA ENGINE (v31.0 Base) ---
+# --- 5. DATA ENGINE (v31.0 Base) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     idx = 1 if "India" in exchange_choice else 0
@@ -69,10 +92,8 @@ def rank_movers(exchange_choice):
         return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
     except: return []
 
-# --- 5. INTERFACE ---
+# --- 6. INTERFACE ---
 st.title("🏛️ Sovereign Intelligence Terminal")
-
-# Universe Switcher - Keyed to trigger refresh of lower elements
 exchange_choice = st.radio("Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
 tab_tactical, tab_research, tab_about = st.tabs(["⚡ Tactical", "🤖 AI Desk", "📜 About"])
@@ -91,29 +112,16 @@ with tab_tactical:
         st.session_state.current_context = leader_ctx
 
     st.divider()
-    
-    # 🏛️ FIX: Key linked to exchange_choice so search clears on switch
     search_q = st.text_input("Strategic Search (Ticker):", key=f"search_{exchange_choice}").upper()
-    
     if search_q:
         try:
             q_t = yf.Ticker(search_q); q_h = q_t.history(period="2d")
             if not q_h.empty:
                 p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
                 piv = (hi + lo + prev) / 3
-                # 🏛️ FIX: Added Entry and Target Math to Search
-                e_price = (2*piv)-hi
-                t_price = (2*piv)-lo
-                
                 st.metric(label=search_q, value=f"{curr_sym}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
-                st.markdown(f"""
-                    <div class='strike-zone-card'>
-                        <span class='val-entry'>Entry: {curr_sym}{e_price:.2f}</span><br>
-                        <span class='val-target'>Target: {curr_sym}{t_price:.2f}</span>
-                    </div>
-                """, unsafe_allow_html=True)
-            else: st.error("No data found for this ticker.")
-        except: st.error("Strategic Feed Offline.")
+                st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr_sym}{(2*piv)-hi:.2f}</span><br><span class='val-target'>Target: {curr_sym}{(2*piv)-lo:.2f}</span></div>", unsafe_allow_html=True)
+        except: st.error("Search Feed Offline.")
 
 with tab_research:
     api_key = st.secrets.get("GEMINI_API_KEY")
@@ -123,15 +131,14 @@ with tab_research:
         if st.button("🗑️ Clear Chat"): st.session_state.messages = []; st.rerun()
 
     suggestions = ["Analyze the leaders", "Define Strike Zone", "Market Trend?"]
-    s_cols = st.columns(3)
-    clicked = None
+    s_cols = st.columns(3); clicked = None
     for idx, s in enumerate(suggestions):
         if s_cols[idx].button(s, use_container_width=True): clicked = s
 
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.write(m["content"])
     
-    prompt = st.chat_input("Ask about the tape...")
+    prompt = st.chat_input("Analyze the tape...")
     final_query = clicked if clicked else prompt
 
     if final_query:
@@ -150,10 +157,10 @@ with tab_about:
     **Sovereign Intelligence Terminal (v31.0 Base)**
     
     #### ⚡ Tactical Features
-    * **Dynamic Discovery:** Real-time scrape of S&P 500 and Nifty 50 indexes.
-    * **Volatility Ranking:** Identifies movers by absolute magnitude of price energy.
-    * **Strategic Search:** Universal search with integrated **Pivot Point Math** (Entry/Target).
-    * **Auto-Clear:** UI state resets when switching between US and Indian universes.
+    * **Vedic Model Discovery:** System automatically audits the API to find the correct `models/` identifier.
+    * **Strategic Search Logic:** Resetting search bar with integrated Entry/Target math.
+    * **Dynamic Discovery:** Real-time scrape of S&P 500 and Nifty 50.
+    * **Institutional Math:** Automated Floor Trader Pivot Points ($S1$/$R1$).
     """)
 
 st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. <b>USER RESPONSIBILITY:</b> You are solely responsible for your financial decisions.</div>""", unsafe_allow_html=True)
