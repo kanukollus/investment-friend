@@ -9,7 +9,6 @@ st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* Global UI Stealth */
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
     
     /* Desktop Mode (Dark) */
@@ -29,8 +28,15 @@ st.markdown("""
             border: 2px solid #000000 !important;
             -webkit-text-fill-color: #000000 !important;
         }
-        [data-testid="stChatMessage"] { background-color: #f0f2f6 !important; border: 1px solid #d0d7de !important; }
-        [data-testid="stChatMessage"] p { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
+    }
+
+    /* Fixed Strategic Result Box */
+    .search-result-box {
+        background-color: #1f2937;
+        border: 1px solid #4b5563;
+        padding: 15px;
+        border-radius: 10px;
+        margin-top: 10px;
     }
 
     .disclaimer-box { 
@@ -43,7 +49,6 @@ st.markdown("""
 # --- 2. GLOBAL STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
-if "suggested_query" not in st.session_state: st.session_state.suggested_query = None
 
 # --- 3. AI & DATA ENGINES ---
 @st.cache_data(ttl=3600)
@@ -98,21 +103,35 @@ with tab_t:
         try:
             q_t = yf.Ticker(search); q_h = q_t.history(period="2d")
             if not q_h.empty:
-                p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
-                piv = (hi + lo + prev) / 3
-                st.metric(label=search, value=f"{curr}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
+                # 🏛️ RE-CALCULATING PIVOTS FOR SEARCHED TICKER
+                p_close, prev_close, p_high, p_low = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
+                pivot_point = (p_high + p_low + prev_close) / 3
+                s1_entry = (2 * pivot_point) - p_high
+                r1_target = (2 * pivot_point) - p_low
+                
+                # 🏛️ FORCING VISIBILITY OF ENTRY/TARGET
+                st.metric(label=search, value=f"{curr}{p_close:.2f}", delta=f"{((p_close-prev_close)/prev_close)*100:.2f}%")
+                
+                st.markdown(f"""
+                <div class="search-result-box">
+                    <span style="color:#58a6ff; font-weight:bold;">Entry ($S1$): {curr}{s1_entry:.2f}</span><br>
+                    <span style="color:#3fb950; font-weight:bold;">Target ($R1$): {curr}{r1_target:.2f}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
                 if api_key:
                     with st.spinner(f"🧠 Advisor thinking..."):
                         model = genai.GenerativeModel(get_working_model(api_key))
                         thesis = model.generate_content(f"3-point bull thesis for {search}").text
                         st.markdown(f"### 📈 Thesis: {search}")
                         st.markdown(f"<div style='background:#f6f8fa; border-left:4px solid #005cc5; padding:15px; color:#000000;'>{thesis}</div>", unsafe_allow_html=True)
-        except: st.error("Ticker offline.")
+            else: st.error("Ticker not found in database.")
+        except: st.error("Strategic Feed Offline.")
 
 with tab_r:
     api_key = st.secrets.get("GEMINI_API_KEY")
     if st.button("🗑️ Reset Chat", key="clear_chat_btn"): 
-        st.session_state.messages = []; st.session_state.suggested_query = None; st.rerun()
+        st.session_state.messages = []; st.rerun()
     
     s_cols = st.columns(3)
     s_list = ["Analyze Movers", "Strike Zones", "Market Trend"]
@@ -138,13 +157,11 @@ with tab_r:
         st.rerun()
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol & Intelligence (v75.0)")
+    st.write("### 📜 Sovereign Protocol (v76.0)")
     st.markdown("""
+    * **Search Fix:** Explicitly re-calculates and displays $S1$ and $R1$ pivots for searched tickers.
+    * **Luminance fortress:** Webkit-text-fill rules prevent browser-forced color inversion.
     * **Pro Tier Infrastructure:** Billing enabled for 2,000 RPM high-throughput analysis.
-    * **Adaptive Theme Guard:** Desktop Dark Mode / Mobile High-Contrast Light Mode.
-    * **Interactive Stability:** Key-anchored buttons and state-persistent tab logic.
-    * **Automated Research:** Fundamental Bull Thesis and Institutional Pivot Math integration.
-    * **Luminance Hardware Lock:** Webkit-text-fill rules prevent browser-forced color inversion.
     """)
 
 st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Financial trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
