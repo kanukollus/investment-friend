@@ -29,19 +29,31 @@ if "messages" not in st.session_state: st.session_state.messages = []
 if "current_context" not in st.session_state: st.session_state.current_context = ""
 
 # --- 3. OPTIMIZED VEDIC DISCOVERY (Shields against 2.5 Daily Caps) ---
-@st.cache_data(ttl=3600) # Only run discovery once per hour to save requests
+# --- 3. VEDIC DISCOVERY: STRICT STABILITY LOCKDOWN ---
+@st.cache_data(ttl=3600)
 def get_working_model(api_key):
     genai.configure(api_key=api_key)
     try:
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # PRIORITY 1: 1.5-Flash (High Daily Free Limit: 1,500 requests/day)
-        if 'models/gemini-1.5-flash' in available_models: return 'models/gemini-1.5-flash'
-        # FALLBACK: First available model that isn't the restrictive 2.5
+        
+        # 🏛️ ARCHITECT'S MOVE: Explicitly Blacklist Experimental Models
+        # This prevents the "0 Limit" crash you are experiencing.
+        blacklist = ['2.0', 'exp', 'experimental', 'thinking']
+        
+        # PRIORITY 1: Force Lock to 1.5-Flash (The current Stability King for Free Tiers)
+        # 1.5-Flash allows ~15 RPM and 1,500 RPD.
+        if 'models/gemini-1.5-flash' in available_models:
+            return 'models/gemini-1.5-flash'
+            
+        # PRIORITY 2: Any non-experimental stable model
         for m in available_models:
-            if '2.5' not in m: return m
-        return available_models[0]
+            if not any(word in m.lower() for word in blacklist):
+                return m
+                
+        # Final fallback to standard Flash 1.5
+        return "models/gemini-1.5-flash"
     except Exception as e:
-        return f"ERROR: {str(e)}"
+        return "models/gemini-1.5-flash"
 
 # --- 4. TRANSPARENT AI HANDLER (Transparency First) ---
 def handle_ai_query(prompt, context, key):
