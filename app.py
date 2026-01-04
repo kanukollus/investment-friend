@@ -5,78 +5,67 @@ import requests
 import google.generativeai as genai
 from google.api_core import exceptions
 
-# --- 1. ARCHITECTURAL CONFIG & RESPONSIVE THEME ---
+# --- 1. ARCHITECTURAL CONFIG & HIGH-CONTRAST THEME ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. Global UI Stealth - Precise targeting to avoid hiding the Disclaimer */
+    /* 1. Global UI Stealth - Targeted to avoid hiding the Disclaimer */
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { 
         visibility: hidden !important; height: 0 !important; 
     }
     
-    /* 2. Mobile & Desktop Color Correction (Fixes White-on-White text) */
-    .stApp { background-color: #0d1117; color: #f0f6fc; }
+    /* 2. Fix Mobile Contrast (Force dark background & bright text) */
+    .stApp { background-color: #0d1117 !important; color: #f0f6fc !important; }
     
-    /* Force Button Text Visibility for Research Desk */
+    /* 3. Button "Browser-Proofing" - Forced High Contrast */
     div[data-testid="stButton"] button {
-        background-color: #161b22 !important;
-        color: #f0f6fc !important;
-        border: 1px solid #30363d !important;
+        background-color: #1f2937 !important; /* Dark Slate */
+        color: #ffffff !important;           /* Pure White Text */
+        border: 1px solid #3b82f6 !important; /* Blue Border */
+        font-weight: bold !important;
+        width: 100% !important;
     }
     div[data-testid="stButton"] button:hover {
-        border-color: #58a6ff !important;
-        color: #58a6ff !important;
+        background-color: #3b82f6 !important;
+        color: #ffffff !important;
     }
 
-    /* 3. Responsive Metric & Card Layouts */
+    /* 4. Responsive Metrics & Cards */
     [data-testid="stMetric"] { 
         background-color: #161b22; 
         border: 1px solid #30363d; 
-        padding: 1rem !important; 
         border-radius: 12px;
     }
-    [data-testid="stMetricLabel"] { font-size: 0.9rem !important; color: #8b949e !important; }
     
-    .strike-zone-card { 
-        background-color: #010409; 
-        border: 1px solid #444c56; 
-        padding: 12px; 
-        border-radius: 10px; 
-        margin-top: 8px; 
-        font-family: monospace;
-    }
-    
-    /* 4. Mobile Refinements (< 768px) */
+    /* 5. Mobile Adjustments */
     @media (max-width: 768px) {
-        div[data-testid="stMetricValue"] { font-size: 1.4rem !important; }
-        .thesis-box { font-size: 0.85rem !important; }
-        .disclaimer-box { font-size: 0.7rem !important; padding: 12px !important; }
+        div[data-testid="stMetricValue"] { font-size: 1.3rem !important; }
+        .stMetric label { font-size: 0.8rem !important; }
+        .disclaimer-box { font-size: 0.75rem !important; }
     }
 
-    /* 5. Fixed Disclaimer & Thesis Boxes */
+    /* 6. Thesis & Visible Disclaimer Guard */
     .thesis-box { 
         background-color: #161b22; 
         border-left: 4px solid #58a6ff; 
         padding: 15px; 
-        margin-top: 15px; 
         border-radius: 0 8px 8px 0; 
-        font-size: 0.95rem; 
-        line-height: 1.6; 
+        margin-top: 15px;
     }
     
-    /* Explicitly visible disclaimer box */
     .disclaimer-box { 
         background-color: #1c1c1c !important; 
         border: 1px solid #ff4b4b !important; 
-        padding: 20px !important; 
-        border-radius: 8px !important; 
-        font-size: 0.85rem !important; 
+        padding: 18px !important; 
+        border-radius: 10px !important; 
         color: #ff4b4b !important; 
-        margin: 40px 0 !important; 
+        margin: 40px auto !important; 
         text-align: center !important;
+        font-weight: bold !important;
         display: block !important;
         visibility: visible !important;
+        max-width: 900px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -126,7 +115,6 @@ with tab_t:
     leaders = rank_movers(exch)
     curr = "₹" if "India" in exch else "$"
     if leaders:
-        # Use columns for desktop; Streamlit stacks them on mobile
         cols = st.columns(len(leaders))
         leader_ctx = ""
         for i, s in enumerate(leaders):
@@ -158,7 +146,6 @@ with tab_r:
     api_key = st.secrets.get("GEMINI_API_KEY")
     if st.button("🗑️ Clear Intelligence"): st.session_state.messages = []; st.rerun()
     
-    # Corrected Contrast Buttons
     s_cols = st.columns(3); clicked = None
     for idx, s in enumerate(["Analyze movers", "Strike Zones", "Trend Analysis"]):
         if s_cols[idx].button(s, use_container_width=True): clicked = s
@@ -173,23 +160,23 @@ with tab_r:
         with st.chat_message("user"): st.write(final)
         with st.chat_message("assistant"):
             model = genai.GenerativeModel(get_working_model(api_key))
-            ans = model.generate_content(f"Market: {st.session_state.current_context}\nQ: {final}").text
+            ans = model.generate_content(f"Context: {st.session_state.current_context}\nQuery: {final}").text
             st.markdown(ans)
             st.session_state.messages.append({"role": "assistant", "content": ans})
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol (v62.0)")
+    st.write("### 📜 Sovereign Protocol (v62.0 Professional)")
     st.markdown("""
-    * **Contrast Shield:** Overrides mobile browser defaults to fix white-on-white text issues.
-    * **Fluid Responsiveness:** Dynamic font scaling for metric values and labels on smaller screens.
-    * **Institutional Disclaimer:** Hard-coded visibility guard to prevent the disclaimer from being hidden.
+    * **Contrast Shield:** Overrides mobile browser defaults to fix unreadable text.
+    * **Fluid Scaling:** Dynamic metrics for high-density mobile displays.
+    * **Billing Tier:** Optimized for professional quotas (2,000 requests per minute).
     """)
 
-# 🏛️ GLOBAL INSTITUTIONAL DISCLAIMER (Locked visibility)
+# 🏛️ GLOBAL INSTITUTIONAL DISCLAIMER (Locked visibility outside of tabs)
 st.markdown("""
 <div class="disclaimer-box">
     <b>⚠️ INSTITUTIONAL RISK WARNING</b><br>
-    Trading involve significant risk. Past performance is not indicative of future results. 
-    Users are solely responsible for all financial decisions made using this terminal.
+    Trading involves significant risk. You are solely responsible for all financial decisions made using this terminal. 
+    Information is for research purposes only.
 </div>
 """, unsafe_allow_html=True)
