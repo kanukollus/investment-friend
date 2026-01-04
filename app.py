@@ -24,41 +24,40 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GLOBAL STATE GUARD (Regression Fix for AttributeError) ---
-if "messages" not in st.session_state: 
-    st.session_state.messages = []
-if "current_context" not in st.session_state: 
-    st.session_state.current_context = ""
+# --- 2. GLOBAL STATE GUARD ---
+if "messages" not in st.session_state: st.session_state.messages = []
+if "current_context" not in st.session_state: st.session_state.current_context = ""
 
 # --- 3. VEDIC MODEL DISCOVERY ---
 def get_working_model(api_key):
     genai.configure(api_key=api_key)
     try:
-        available_models = [
-            m.name for m in genai.list_models() 
-            if 'generateContent' in m.supported_generation_methods
-        ]
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         if 'models/gemini-1.5-flash' in available_models: return 'models/gemini-1.5-flash'
-        for m in available_models:
-            if 'flash' in m: return m
-        return available_models[0]
-    except: return "models/gemini-1.5-flash"
+        return available_models[0] if available_models else "models/gemini-1.5-flash"
+    except Exception as e:
+        return f"ERROR_DISCOVERY: {str(e)}"
 
-# --- 4. STABLE AI HANDLER ---
+# --- 4. TRANSPARENT AI HANDLER (Returns Raw Exceptions) ---
 def handle_ai_query(prompt, context, key):
     model_name = get_working_model(key)
-    for attempt in range(3):
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(f"Context: {context[:400]}\nUser: {prompt}")
-            if response and response.text:
-                return response.text
-            return "⚠️ Empty response. Please retry."
-        except Exception as e:
-            if "429" in str(e):
-                time.sleep(3 ** attempt); continue
-            return f"⚠️ Connection Error: {str(e)[:50]}..."
-        return e
+    if "ERROR_DISCOVERY" in model_name:
+        return model_name
+        
+    try:
+        model = genai.GenerativeModel(model_name)
+        # Minimize context to reduce "None" failures caused by over-tokenization
+        response = model.generate_content(f"Market: {context[:300]}\nQuery: {prompt}")
+        
+        if hasattr(response, 'text'):
+            return response.text
+        else:
+            # Handle cases where safety filters block the response
+            return f"⚠️ SAFETY BLOCK OR EMPTY: {str(response.prompt_feedback)}"
+            
+    except Exception as e:
+        # RETURN RAW EXCEPTION AS REQUESTED
+        return f"🚨 RAW SYSTEM ERROR: {str(e)}"
 
 # --- 5. DATA ENGINE (v31.0 Base) ---
 @st.cache_data(ttl=600)
@@ -119,17 +118,14 @@ with tab_tactical:
 
 with tab_research:
     api_key = st.secrets.get("GEMINI_API_KEY")
-    c1, c2 = st.columns([4, 1])
-    with c1: st.write("### AI Research Desk")
-    with c2: 
-        if st.button("🗑️ Clear Chat"): st.session_state.messages = []; st.rerun()
+    c1, c2 = st.columns([4, 1]); c1.write("### AI Research Desk")
+    if c2.button("🗑️ Clear Chat"): st.session_state.messages = []; st.rerun()
 
     suggestions = ["Analyze the leaders", "Define Strike Zone", "Market Trend?"]
     s_cols = st.columns(3); clicked = None
     for idx, s in enumerate(suggestions):
         if s_cols[idx].button(s, use_container_width=True): clicked = s
 
-    # Safe Loop: Only runs if st.session_state.messages was initialized by Guard
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.write(m["content"])
     
@@ -143,19 +139,20 @@ with tab_research:
             if not api_key: st.error("Missing API Key.")
             else:
                 ans = handle_ai_query(final_query, st.session_state.current_context, api_key)
+                # Output the response (or the Raw Error)
                 st.markdown(f"<div class='advisor-brief'>{ans}</div>", unsafe_allow_html=True)
                 st.session_state.messages.append({"role": "assistant", "content": ans})
 
 with tab_about:
     st.write("### 🏛️ Sovereign Protocol & Features")
     st.markdown("""
-    **Sovereign Intelligence Terminal (v31.0 Base)**
+    **Sovereign Intelligence Terminal (v49.0 - Debug Mode)**
     
-    #### ⚡ Tactical Features
-    * **State Guard Protection:** Architectural fix for AttributeError crashes during refreshes.
-    * **AI Return Logic:** Handshake verified to prevent "None" results.
+    #### 🛠️ Transparency Features
+    * **Raw Exception Reporting:** AI handler now returns original system errors for precise debugging.
+    * **Safety Filter Awareness:** Explicitly reports if a query was blocked by Gemini's internal filters.
+    * **State Guard Protection:** Architectural fix for AttributeError crashes.
     * **Vedic Model Discovery:** Corrected model handshake for `v1beta` support.
-    * **Strategic Search:** Resetting search bar with integrated Entry/Target math.
     """)
 
 st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. <b>USER RESPONSIBILITY:</b> You are solely responsible for your financial decisions.</div>""", unsafe_allow_html=True)
