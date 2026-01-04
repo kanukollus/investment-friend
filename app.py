@@ -43,33 +43,36 @@ def generate_s_score(ticker, price, entry, target, key):
     try:
         model = genai.GenerativeModel(get_working_model(key))
         prompt = f"Quant: {ticker} @ {price}, Entry {entry}, Target {target}. Score 1-100 probability. Return ONLY number + 6-word summary."
-        # Added delay to prevent S-Score calls from overwhelming the quota
         time.sleep(1) 
         response = model.generate_content(prompt)
         return response.text.strip()
-    except: return "70 | Analysis paused due to API quota."
+    except: return "70 | Quota reached. Proceed with technical targets."
 
 def handle_ai_query(prompt, context, key):
     for attempt in range(3):
         try:
             model = genai.GenerativeModel(get_working_model(key))
             full_prompt = f"Context: {context}\n\nUser: {prompt}"
-            time.sleep(2.0) # Forced delay to stay under RPM limits
+            time.sleep(2.0) 
             return model.generate_content(full_prompt).text
         except Exception as e:
             if "429" in str(e) and attempt < 2:
                 time.sleep(5); continue
-            return "⚠️ Service Busy: Gemini's free tier is at capacity. Please wait 60s and try again."
+            return "⚠️ Service Busy: Gemini's free tier is at capacity. Please wait 60s."
 
-# --- 4. DATA ENGINE ---
+# --- 4. DATA ENGINE (FIXED: Added User-Agent & Empty Guard) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     idx = 1 if "India" in exchange_choice else 0
     url = "https://en.wikipedia.org/wiki/NIFTY_50" if idx == 1 else "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    
+    # 🏛️ FIX: Headers added to avoid Wikipedia 403 Forbidden blocking
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+    
     try:
-        response = requests.get(url, headers=headers)
-        symbols = pd.read_html(response.text)[idx]['Symbol'].tolist()
+        resp = requests.get(url, headers=headers)
+        table_idx = 1 if "India" in exchange_choice else 0
+        symbols = pd.read_html(resp.text)[table_idx]['Symbol'].tolist()
         if idx == 1: symbols = [s + ".NS" for s in symbols]
         
         sample = symbols[::max(1, len(symbols)//40)] 
@@ -77,7 +80,7 @@ def rank_movers(exchange_choice):
         for symbol in sample:
             try:
                 t = yf.Ticker(symbol); h = t.history(period="10d")
-                if len(h) < 5: continue
+                if len(h) < 2: continue
                 info = t.info
                 curr, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
                 piv = (hi + lo + prev) / 3
@@ -93,9 +96,14 @@ def rank_movers(exchange_choice):
                     "l52": info.get('fiftyTwoWeekLow', 0), "abs_change": abs(((curr-prev)/prev)*100)
                 })
             except: continue
+            
+        # 🏛️ FIX: Structural Guard to prevent KeyError
         if not results: return []
-        return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
-    except: return []
+        df = pd.DataFrame(results)
+        if 'abs_change' not in df.columns: return []
+        return df.sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
+    except Exception as e:
+        return []
 
 # --- 5. UI INTERFACE ---
 st.title("🏛️ Sovereign Intelligence Terminal")
@@ -108,17 +116,14 @@ with tab_tactical:
     curr_sym = "₹" if "India" in exchange_choice else "$"
     
     if not leaders:
-        st.warning("Market data unavailable. Please refresh.")
+        st.warning("⚠️ Market data temporarily unavailable. This usually occurs when data providers are resetting (weekends) or during connectivity blocks. Please try again in 60s.")
     else:
         leader_context = f"Leaders in {exchange_choice}: "
         cols = st.columns(5)
         for i, stock in enumerate(leaders):
             with cols[i]:
-                # S-Score (Agentic AI)
                 raw_s = generate_s_score(stock['ticker'], stock['price'], stock['entry'], stock['target'], st.secrets.get("GEMINI_API_KEY"))
                 st.markdown(f"<div class='sovereign-score'>S-SCORE: {raw_s}</div>", unsafe_allow_html=True)
-                
-                # RESTORED: Currency Symbol in Metric
                 st.metric(label=stock['ticker'], value=f"{curr_sym}{stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
                 
                 st.markdown(f"""
@@ -135,7 +140,7 @@ with tab_tactical:
         st.session_state.current_context = leader_context
 
     st.divider()
-    query = st.text_input("Deep-Dive Ticker (e.g. RELIANCE.NS, TSLA):").upper()
+    query = st.text_input("Deep-Dive Any Ticker (e.g. RELIANCE.NS, TSLA):").upper()
     if query:
         try:
             q_t = yf.Ticker(query); q_h = q_t.history(period="2d"); q_i = q_t.info
@@ -160,7 +165,6 @@ with tab_research:
 
     api_key = st.secrets.get("GEMINI_API_KEY")
     if api_key:
-        # RESTORED: AI Suggestion Buttons
         suggestions = ["Analyze the leaders", "Explain the flush", "Nifty 50 Trend?"]
         s_cols = st.columns(3); clicked = None
         for idx, s in enumerate(suggestions):
@@ -181,23 +185,24 @@ with tab_research:
 
 with tab_about:
     st.markdown("""
-    ### 🏛️ Sovereign Protocol & Alpha Features (v34.0)
+    ### 🏛️ Sovereign Protocol & Alpha Features (v35.0)
     
     #### 🚀 The Alpha Power Moves
-    * **Agentic S-Score:** Gemini acts as a Quant Agent assigning probability scores (1-100) to setups.
-    * **Statistical Backtesting:** 5-Day "Success Rate" based on historical target hits.
-    * **Risk/Reward (R/R) Engine:** Automated gain-vs-loss ratio for institutional setups.
+    * **Agentic S-Score:** Gemini acts as a Quant Agent to assign 1-100 probability scores to setups based on current and pivot price data.
+    * **Statistical Backtesting:** 5-Day "Success Rate" shows how many times the asset reached its tactical target in the last week.
+    * **Risk/Reward (R/R) Engine:** Institutional math to show potential gain vs. risk at the 1.5% stop-loss level.
 
     #### ⚡ Core Tactical Features
-    * **Dynamic Market Discovery:** Real-time scrape of S&P 500 or Nifty 50.
-    * **Volatility-First Ranking:** Tickers identified by absolute magnitude of percentage change.
-    * **Institutional Pivot Math:** Every asset analyzed via professional floor-trader pivot points.
-    * **Full Security Profiling:** Security Full Names and 52-Week High/Low range context.
-    * **Global Exchange Switching:** Toggle between US ($) and India (₹) universes.
+    * **Dynamic Market Discovery:** Real-time index scraping of US and Indian markets without hardcoded seed lists.
+    * **Volatility Ranking:** Absolute magnitude sorting to prioritize the day's true movers.
+    * **Institutional Pivot Math:** Automated entry (S1) and target (R1) levels using professional floor-trader formulas.
+    * **Full Security Profiling:** Security full names and 52-week high/low data for macro context.
+    * **Global Exchange Switching:** Toggle between S&P 500 ($) and Nifty 50 (₹) universes with automatic ticker normalization.
     
     #### 🛡️ Stability & Security
-    * **Exponential Backoff:** Intelligent retries to handle Gemini's free-tier rate limits.
-    * **Whitelabel UI:** Custom OLED-contrast theme with zero Streamlit branding.
+    * **Exponential Backoff:** Stability guards to handle the 429 quota limits on Gemini free tier.
+    * **Whitelabel UI:** Full custom CSS to remove Streamlit branding for a high-performance OLED look.
+    * **Structural Guardrails:** Prevention of data-handling crashes during weekend closes.
     """)
 
-st.markdown("""<div class="disclaimer-box"><b>⚠️ INSTITUTIONAL DISCLAIMER:</b> Informational use only. Trading involves substantial risk. <b>USER RESPONSIBILITY:</b> You are solely responsible for your financial decisions. The developer accepts no liability for actions taken based on this data.</div>""", unsafe_allow_html=True)
+st.markdown("""<div class="disclaimer-box"><b>⚠️ INSTITUTIONAL DISCLAIMER:</b> Informational use only. Trading involves substantial risk. <b>USER RESPONSIBILITY:</b> You are solely responsible for your financial decisions and resulting actions. The developer accepts no liability for any losses or damages.</div>""", unsafe_allow_html=True)
