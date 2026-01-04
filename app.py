@@ -6,62 +6,65 @@ import google.generativeai as genai
 import time
 from google.api_core import exceptions
 
-# --- 1. ARCHITECTURAL CONFIG & HIGH-CONTRAST THEME ---
+# --- 1. ARCHITECTURAL CONFIG & CONTRAST ENGINE ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
+    /* 1. Global Stealth & Contrast Guard */
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
+    .stApp { background-color: #0d1117 !important; color: #FFFFFF !important; }
     
-    /* 1. Global Contrast Guard */
-    .stApp { background-color: #0d1117 !important; color: #FAFAFA !important; }
+    /* 2. FIX: Menu & Tab Visibility (Resolves IMG_3192.jpg contrast issues) */
+    button[data-baseweb="tab"] { color: #8b949e !important; }
+    button[data-baseweb="tab"][aria-selected="true"] { color: #58a6ff !important; border-bottom-color: #58a6ff !important; }
     
-    /* 2. Top 5 Picks - High-Contrast Card Styling */
+    /* 3. FIX: Button Visibility (Resolves IMG_3192.jpg white-on-white) */
+    div[data-testid="stButton"] button {
+        background-color: #1f2937 !important; 
+        color: #FFFFFF !important;
+        border: 1px solid #30363d !important;
+        font-weight: 600 !important;
+    }
+
+    /* 4. Tactical Cards (IMG_3191.jpg/IMG_3193.jpg Optimization) */
     [data-testid="stMetric"] { 
-        background-color: #161b22; 
-        border: 1px solid #30363d; 
+        background-color: #161b22 !important; 
+        border: 1px solid #30363d !important; 
         border-radius: 12px;
-        padding: 1.2rem !important;
+        padding: 1rem !important;
     }
-    
-    /* Force high-contrast text on Metrics */
-    [data-testid="stMetricLabel"] { color: #B0B0B0 !important; font-size: 0.9rem !important; }
-    [data-testid="stMetricValue"] { color: #FAFAFA !important; font-weight: 800 !important; }
+    [data-testid="stMetricValue"] { color: #FFFFFF !important; font-size: 1.8rem !important; font-weight: 700 !important; }
+    [data-testid="stMetricLabel"] { color: #8b949e !important; }
 
-    /* 3. Strike Zone Card - Desaturated Slate */
     .strike-zone-card { 
-        background-color: #1f2937; /* Desaturated Slate */
-        border: 1px solid #4b5563; 
-        padding: 14px; 
-        border-radius: 10px; 
-        margin-top: 10px; 
-        font-family: monospace;
-        color: #E0E0E0 !important;
+        background-color: #0d1117; 
+        border: 1px solid #30363d; 
+        padding: 12px; 
+        border-radius: 8px; 
+        margin-top: 8px;
+        font-family: 'Courier New', monospace;
     }
-    .val-entry { color: #60a5fa !important; font-weight: bold; } /* Desaturated Blue */
-    .val-target { color: #34d399 !important; font-weight: bold; } /* Desaturated Green */
+    .val-entry { color: #58a6ff !important; font-weight: bold; }
+    .val-target { color: #3fb950 !important; font-weight: bold; }
 
-    /* 4. Thinking Spinner UI */
-    .stSpinner { color: #58a6ff !important; font-family: monospace; }
-
-    /* 5. Mobile Adjustments (< 768px) */
+    /* 5. Mobile Fluidity Scaling */
     @media (max-width: 768px) {
-        div[data-testid="stMetricValue"] { font-size: 1.25rem !important; }
-        .strike-zone-card { font-size: 0.8rem !important; }
+        [data-testid="stMetricValue"] { font-size: 1.4rem !important; }
+        .stApp { padding: 10px !important; }
     }
 
-    /* 6. Professional Disclaimer Guard */
+    /* 6. Institutional Disclaimer - High Contrast Red */
     .disclaimer-box { 
         background-color: #1c1c1c !important; 
-        border: 1px solid #ef4444 !important; 
-        padding: 18px !important; 
-        border-radius: 10px !important; 
-        color: #f87171 !important; 
+        border: 1px solid #f85149 !important; 
+        padding: 15px !important; 
+        border-radius: 8px !important; 
+        color: #f85149 !important; 
         margin: 40px auto !important; 
         text-align: center !important;
-        font-weight: 600 !important;
-        max-width: 850px;
-        visibility: visible !important;
+        font-size: 0.85rem !important;
+        font-weight: bold !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -111,17 +114,15 @@ with tab_t:
     leaders = rank_movers(exch)
     curr = "₹" if "India" in exch else "$"
     if leaders:
-        cols = st.columns(len(leaders))
         leader_ctx = ""
         for i, s in enumerate(leaders):
-            with cols[i]:
-                st.metric(label=s['ticker'], value=f"{curr}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
-                st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr}{s['entry']:.2f}</span><br><span class='val-target'>Target: {curr}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
-                leader_ctx += f"{s['ticker']}:{s['price']}; "
+            st.metric(label=s['ticker'], value=f"{curr}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
+            st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr}{s['entry']:.2f}</span> | <span class='val-target'>Target: {curr}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
+            leader_ctx += f"{s['ticker']}:{s['price']}; "
         st.session_state.current_context = leader_ctx
     
     st.divider()
-    search = st.text_input("Strategic Search (Ticker):", key=f"s_{exch}").strip().upper()
+    search = st.text_input("Strategic Search:", key=f"s_{exch}").strip().upper()
     if search:
         api_key = st.secrets.get("GEMINI_API_KEY")
         try:
@@ -130,53 +131,38 @@ with tab_t:
                 p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
                 piv = (hi + lo + prev) / 3
                 st.metric(label=search, value=f"{curr}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
-                st.markdown(f"<div class='strike-zone-card'>Entry: {curr}{(2*piv)-hi:.2f} | Target: {curr}{(2*piv)-lo:.2f}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr}{(2*piv)-hi:.2f}</span> | <span class='val-target'>Target: {curr}{(2*piv)-lo:.2f}</span></div>", unsafe_allow_html=True)
                 if api_key:
-                    # 🏛️ THINKING GUARD
-                    with st.spinner(f"AI Advisor is thinking about {search}..."):
+                    with st.spinner("Analyzing..."):
                         model = genai.GenerativeModel(get_working_model(api_key))
-                        thesis = model.generate_content(f"3-point investment thesis for {search}").text
+                        thesis = model.generate_content(f"3-point bull thesis for {search}").text
                         st.markdown(f"### 📈 Thesis: {search}")
                         st.markdown(f"<div class='strike-zone-card'>{thesis}</div>", unsafe_allow_html=True)
-        except: st.error("Ticker not found.")
+        except: st.error("Ticker offline.")
 
 with tab_r:
     api_key = st.secrets.get("GEMINI_API_KEY")
-    if st.button("🗑️ Clear Intelligence"): st.session_state.messages = []; st.rerun()
+    if st.button("🗑️ Reset Chat"): st.session_state.messages = []; st.rerun()
     
     s_cols = st.columns(3); clicked = None
-    for idx, s in enumerate(["Analyze movers", "Strike Zones", "Trend Analysis"]):
+    for idx, s in enumerate(["Analyze Movers", "Strike Zones", "Market Trend"]):
         if s_cols[idx].button(s, use_container_width=True): clicked = s
 
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.write(m["content"])
     
-    prompt = st.chat_input("Ask Terminal...")
-    final = clicked if clicked else prompt
-    if final:
-        st.session_state.messages.append({"role": "user", "content": final})
-        with st.chat_message("user"): st.write(final)
+    if prompt := st.chat_input("Ask Terminal..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"): st.write(prompt)
         with st.chat_message("assistant"):
-            # 🏛️ THINKING GUARD
-            with st.spinner("Sovereign Intelligence is thinking..."):
+            with st.spinner("🧠 Thinking..."):
                 model = genai.GenerativeModel(get_working_model(api_key))
-                ans = model.generate_content(f"Context: {st.session_state.current_context}\nQuery: {final}").text
-                st.markdown(ans)
-                st.session_state.messages.append({"role": "assistant", "content": ans})
+                ans = model.generate_content(f"Context: {st.session_state.current_context}\nQ: {prompt}").text
+                st.markdown(ans); st.session_state.messages.append({"role": "assistant", "content": ans})
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol (v64.0 Professional)")
-    st.markdown("""
-    * **Contrast Logic:** Switched white to **Off-White (#FAFAFA)** and **Slate (#1F2937)** for mobile clarity.
-    * **Thinking Guard:** Implemented `st.spinner` for all AI interactions to provide visual feedback.
-    * **Fluid Scaling:** Adjusted metric padding and sizing for high-density mobile screens.
-    """)
+    st.write("### 📜 Sovereign Protocol (v65.0)")
+    st.markdown("* **Contrast Guard:** Explicitly locks HEX colors for menu items to prevent mobile 'Ghost' text.\n* **Fluid Stack:** Metrics stack vertically on mobile for better touch targeting.\n* **Pro Tier:** Optimized for billing-enabled API quotas (2,000 RPM).")
 
-# 🏛️ GLOBAL INSTITUTIONAL DISCLAIMER
-st.markdown("""
-<div class="disclaimer-box">
-    <b>⚠️ INSTITUTIONAL RISK WARNING</b><br>
-    Information is for research purposes only. 
-    Users are solely responsible for all financial decisions made using this terminal.
-</div>
-""", unsafe_allow_html=True)
+# --- GLOBAL DISCLAIMER ---
+st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Trading involves significant risk. Users are solely responsible for financial decisions.</div>""", unsafe_allow_html=True)
