@@ -5,58 +5,55 @@ import requests
 import google.generativeai as genai
 import time
 
-# --- 1. ARCHITECTURAL CONFIG & LUMINANCE ENGINE ---
+# --- 1. ARCHITECTURAL CONFIG & LUMINANCE FORTRESS ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. Global Stealth */
+    /* 1. Global UI Stealth & Heavy Background Lock */
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
     .stApp { background-color: #0d1117 !important; color: #FFFFFF !important; }
     
     /* 2. FIX: Radio Option Visibility (S&P / Nifty) */
+    /* Target the text container directly with high specificity */
     div[data-testid="stRadio"] label p { 
-        color: rgba(255, 255, 255, 0.95) !important; 
-        font-weight: 700 !important; 
-        text-shadow: 0px 0px 1px #000;
+        color: #FFFFFF !important; 
+        font-weight: 800 !important; 
+        font-size: 1.1rem !important;
+        opacity: 1 !important;
+        -webkit-text-fill-color: #FFFFFF !important; /* Force for iOS Safari */
     }
     
-    /* 3. FIX: AI Response Visibility (Resolves Mobile Washout) */
-    [data-testid="stChatMessage"] { 
-        background-color: #161b22 !important; 
+    /* 3. FIX: AI Suggestion Buttons (Resolves White-on-White) */
+    div[data-testid="stButton"] button {
+        background-color: #21262d !important; /* Dark Grey Institutional */
+        color: #58a6ff !important;           /* Bright Blue Text */
         border: 1px solid #30363d !important;
-        color: #FFFFFF !important;
-        font-size: 1rem !important;
+        font-weight: 700 !important;
+        width: 100% !important;
+        padding: 0.8rem !important;
+        -webkit-text-fill-color: #58a6ff !important;
     }
-    [data-testid="stChatMessage"] p { color: #FFFFFF !important; font-weight: 400 !important; }
-
-    /* 4. Strategic Search Label */
-    div[data-testid="stTextInput"] label p { color: #58a6ff !important; font-size: 1.1rem !important; }
-
-    /* 5. Metrics & Tactical Layout */
-    [data-testid="stMetric"] { background-color: #161b22 !important; border: 1px solid #30363d !important; border-radius: 12px; }
-    [data-testid="stMetricValue"] { color: #FFFFFF !important; font-weight: 800 !important; }
-    
-    .strike-zone-card { 
-        background-color: #1f2937; 
-        border: 1px solid #4b5563; 
-        padding: 12px; 
-        border-radius: 8px; 
-        margin-top: 8px;
-        color: #FFFFFF !important;
+    div[data-testid="stButton"] button:hover {
+        border-color: #58a6ff !important;
+        background-color: #30363d !important;
     }
-    .val-entry { color: #60a5fa !important; font-weight: bold; }
-    .val-target { color: #34d399 !important; font-weight: bold; }
 
-    /* 6. Professional Disclaimer */
+    /* 4. Chat & Metric Visibility */
+    [data-testid="stChatMessage"] { background-color: #161b22 !important; border: 1px solid #30363d !important; }
+    [data-testid="stChatMessage"] p { color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important; }
+    [data-testid="stMetricValue"] { color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important; font-weight: 800 !important; }
+
+    /* 5. Institutional Disclaimer */
     .disclaimer-box { 
         background-color: #1c1c1c !important; 
-        border: 1px solid #ef4444 !important; 
+        border: 1px solid #f85149 !important; 
         padding: 15px !important; 
         border-radius: 8px !important; 
-        color: #f87171 !important; 
+        color: #f85149 !important; 
         margin-top: 40px !important;
         text-align: center;
+        font-weight: bold;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -100,6 +97,7 @@ def rank_movers(universe):
 # --- 5. INTERFACE ---
 st.title("🏛️ Sovereign Terminal")
 
+# Universe Control - Force Visibility
 exch = st.radio("Universe Selection:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 leaders = rank_movers(exch)
 
@@ -111,7 +109,7 @@ with tab_t:
         leader_ctx = ""
         for i, s in enumerate(leaders):
             st.metric(label=s['ticker'], value=f"{curr}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
-            st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr}{s['entry']:.2f}</span> | <span class='val-target'>Target: {curr}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background:#1f2937; padding:10px; border-radius:8px; border:1px solid #4b5563; margin-top:5px;'><span style='color:#58a6ff'>Entry: {curr}{s['entry']:.2f}</span> | <span style='color:#3fb950'>Target: {curr}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
             leader_ctx += f"{s['ticker']}:{s['price']}; "
         st.session_state.current_context = leader_ctx
     
@@ -125,13 +123,12 @@ with tab_t:
                 p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
                 piv = (hi + lo + prev) / 3
                 st.metric(label=search, value=f"{curr}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
-                st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr}{(2*piv)-hi:.2f}</span> | <span class='val-target'>Target: {curr}{(2*piv)-lo:.2f}</span></div>", unsafe_allow_html=True)
                 if api_key:
                     with st.spinner(f"🧠 Advisor processing {search}..."):
                         model = genai.GenerativeModel(get_working_model(api_key))
                         thesis = model.generate_content(f"3-point bull thesis for {search}").text
                         st.markdown(f"### 📈 Thesis: {search}")
-                        st.markdown(f"<div class='strike-zone-card'>{thesis}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='background:#161b22; border-left:4px solid #58a6ff; padding:15px; color:#FFFFFF;'>{thesis}</div>", unsafe_allow_html=True)
         except: st.error("Ticker offline.")
 
 with tab_r:
@@ -145,7 +142,6 @@ with tab_r:
         if s_cols[idx].button(s, key=f"s_btn_{idx}", use_container_width=True): 
             st.session_state.suggested_query = s
 
-    # RENDER Chat Messages with High-Contrast Box Styling
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.markdown(m["content"])
     
@@ -164,11 +160,7 @@ with tab_r:
         st.rerun()
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol (v69.0)")
-    st.markdown("""
-    * **Luminance Guard:** Implemented high-contrast white text for radio labels and AI chat bubbles to prevent mobile washout.
-    * **Interaction Stability:** Maintained unique persistent keys to ensure Suggestion buttons remain clickable.
-    * **Pro Scaling:** Optimized for professional-tier billing (2,000 RPM).
-    """)
+    st.write("### 📜 Sovereign Protocol (v70.0)")
+    st.markdown("* **Luminance Fortress:** Used Webkit-specific text-fill rules to prevent iOS color inversion.\n* **Hard Contrast:** AI Suggestions now use bright blue text on charcoal backgrounds for 100% legibility.\n* **Pro Tier:** Optimized for professional-tier billing (2,000 RPM).")
 
-st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Financial trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
+st.markdown("""<div class="disclaimer-box">⚠️ RISK WARNING: Trading involves high risk. All decisions are the responsibility of the user.</div>""", unsafe_allow_html=True)
