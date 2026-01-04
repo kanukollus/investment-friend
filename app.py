@@ -35,7 +35,6 @@ def get_working_model(api_key):
     genai.configure(api_key=api_key)
     try:
         available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Priority: Flash 1.5 for high-quota student stability
         if 'models/gemini-1.5-flash' in available: return 'models/gemini-1.5-flash'
         return available[0]
     except Exception:
@@ -45,29 +44,21 @@ def get_working_model(api_key):
 def generate_with_retry(prompt, context, api_key):
     model_name = get_working_model(api_key)
     model = genai.GenerativeModel(model_name)
-    
-    retries = 3
-    delay = 2  # Start with a 2-second delay
+    retries, delay = 3, 2
 
     for i in range(retries):
         try:
-            # Enhanced prompt with system context
-            full_prompt = f"Context Snapshot: {context[:300]}\nUser Request: {prompt}"
+            full_prompt = f"Context: {context[:300]}\nUser: {prompt}"
             response = model.generate_content(full_prompt)
-            
-            if response and hasattr(response, 'text'):
-                return response.text
-            return "⚠️ Safety Filter: Content blocked by API."
-        
+            if response and hasattr(response, 'text'): return response.text
+            return "⚠️ Response blocked by safety filters."
         except exceptions.ResourceExhausted as e:
             if i < retries - 1:
-                st.warning(f"Quota hit. Waiting {delay}s before retrying... (Attempt {i+1}/3)")
+                st.warning(f"Quota hit. Retrying in {delay}s...")
                 time.sleep(delay)
-                delay *= 2  # Exponential backoff
-            else:
-                return f"🚨 Max retries reached. Raw Error: {str(e)}"
-        except Exception as e:
-            return f"🚨 RAW ERROR: {str(e)}"
+                delay *= 2
+            else: return f"🚨 Max retries reached: {str(e)}"
+        except Exception as e: return f"🚨 RAW ERROR: {str(e)}"
 
 # --- 5. DATA ENGINE (v31.0 Base) ---
 @st.cache_data(ttl=600)
@@ -98,27 +89,34 @@ tab_tactical, tab_research, tab_about = st.tabs(["⚡ Tactical", "🤖 AI Resear
 
 with tab_tactical:
     leaders = rank_movers(exch)
-    sym = "₹" if "India" in exch else "$"
+    curr_sym = "₹" if "India" in exch else "$"
     if leaders:
         leader_ctx = ""
         cols = st.columns(5)
         for i, s in enumerate(leaders):
             with cols[i]:
-                st.metric(label=s['ticker'], value=f"{sym}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
-                st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {sym}{s['entry']:.2f}</span><br><span class='val-target'>Target: {sym}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
+                st.metric(label=s['ticker'], value=f"{curr_sym}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
+                st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr_sym}{s['entry']:.2f}</span><br><span class='val-target'>Target: {curr_sym}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
                 leader_ctx += f"{s['ticker']}:{s['price']}; "
         st.session_state.current_context = leader_ctx
     
     st.divider()
-    search = st.text_input("Strategic Search (Ticker):", key=f"s_{exch}").upper()
+    
+    # 🏛️ FIX: Search logic guarded to prevent false "Ticker not found"
+    search = st.text_input("Strategic Search (Ticker):", key=f"s_{exch}").strip().upper()
+    
     if search:
         try:
             q_t = yf.Ticker(search); q_h = q_t.history(period="2d")
-            p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
-            piv = (hi + lo + prev) / 3
-            st.metric(label=search, value=f"{sym}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
-            st.markdown(f"<div class='strike-zone-card'>Entry: {curr}{(2*piv)-hi:.2f} | Target: {curr}{(2*piv)-lo:.2f}</div>", unsafe_allow_html=True)
-        except: st.error("Ticker not found.")
+            if not q_h.empty:
+                p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
+                piv = (hi + lo + prev) / 3
+                st.metric(label=search, value=f"{curr_sym}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
+                st.markdown(f"<div class='strike-zone-card'>Entry: {curr_sym}{(2*piv)-hi:.2f} | Target: {curr_sym}{(2*piv)-lo:.2f}</div>", unsafe_allow_html=True)
+            else:
+                st.error(f"Ticker '{search}' not found in {exch} data feed.")
+        except Exception:
+            st.error("Financial Data Service is temporarily unavailable.")
 
 with tab_research:
     api_key = st.secrets.get("GEMINI_API_KEY")
@@ -144,18 +142,18 @@ with tab_research:
         with st.chat_message("assistant"):
             if not api_key: st.error("Missing API Key.")
             else:
-                with st.spinner("Executing resilient AI request..."):
+                with st.spinner("Processing resilient AI request..."):
                     ans = generate_with_retry(final_query, st.session_state.current_context, api_key)
                     st.markdown(f"<div class='advisor-brief'>{ans}</div>", unsafe_allow_html=True)
                     st.session_state.messages.append({"role": "assistant", "content": ans})
 
 with tab_about:
-    st.write("### 🏛️ Sovereign Protocol & Features (v55.0)")
+    st.write("### 🏛️ Sovereign Protocol & Features (v56.0)")
     st.markdown("""
+    * **Search Guard:** Logic implemented to prevent "Ticker not found" error during state changes.
     * **Exponential Backoff:** Integrated student-provided retry logic to handle `ResourceExhausted` errors.
-    * **Vedic Model Discovery:** System audits API aliases to find valid content generators.
-    * **Student Optimization:** Locked to **Gemini 1.5 Flash** for high-quota stability.
-    * **Whitelabel UI:** Standard features preserved (Strategic Search, Universe Clearing).
+    * **Vedic Discovery:** Audits API aliases for content generators.
+    * **Stable Core:** Preserved v31.0 Tactical Engine and Student Optimization.
     """)
 
 st.markdown("""<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Informational use only. <b>USER RESPONSIBILITY:</b> GT students are solely responsible for their financial decisions.</div>""", unsafe_allow_html=True)
