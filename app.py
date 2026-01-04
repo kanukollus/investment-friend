@@ -3,6 +3,7 @@ import pandas as pd
 import yfinance as yf
 import requests
 import google.generativeai as genai
+import time
 from google.api_core import exceptions
 
 # --- 1. ARCHITECTURAL CONFIG & HIGH-CONTRAST THEME ---
@@ -10,62 +11,57 @@ st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. Global UI Stealth - Targeted to avoid hiding the Disclaimer */
-    header, [data-testid="stToolbar"], [data-testid="stDecoration"] { 
-        visibility: hidden !important; height: 0 !important; 
-    }
+    header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
     
-    /* 2. Fix Mobile Contrast (Force dark background & bright text) */
-    .stApp { background-color: #0d1117 !important; color: #f0f6fc !important; }
+    /* 1. Global Contrast Guard */
+    .stApp { background-color: #0d1117 !important; color: #FAFAFA !important; }
     
-    /* 3. Button "Browser-Proofing" - Forced High Contrast */
-    div[data-testid="stButton"] button {
-        background-color: #1f2937 !important; /* Dark Slate */
-        color: #ffffff !important;           /* Pure White Text */
-        border: 1px solid #3b82f6 !important; /* Blue Border */
-        font-weight: bold !important;
-        width: 100% !important;
-    }
-    div[data-testid="stButton"] button:hover {
-        background-color: #3b82f6 !important;
-        color: #ffffff !important;
-    }
-
-    /* 4. Responsive Metrics & Cards */
+    /* 2. Top 5 Picks - High-Contrast Card Styling */
     [data-testid="stMetric"] { 
         background-color: #161b22; 
         border: 1px solid #30363d; 
         border-radius: 12px;
+        padding: 1.2rem !important;
     }
     
-    /* 5. Mobile Adjustments */
+    /* Force high-contrast text on Metrics */
+    [data-testid="stMetricLabel"] { color: #B0B0B0 !important; font-size: 0.9rem !important; }
+    [data-testid="stMetricValue"] { color: #FAFAFA !important; font-weight: 800 !important; }
+
+    /* 3. Strike Zone Card - Desaturated Slate */
+    .strike-zone-card { 
+        background-color: #1f2937; /* Desaturated Slate */
+        border: 1px solid #4b5563; 
+        padding: 14px; 
+        border-radius: 10px; 
+        margin-top: 10px; 
+        font-family: monospace;
+        color: #E0E0E0 !important;
+    }
+    .val-entry { color: #60a5fa !important; font-weight: bold; } /* Desaturated Blue */
+    .val-target { color: #34d399 !important; font-weight: bold; } /* Desaturated Green */
+
+    /* 4. Thinking Spinner UI */
+    .stSpinner { color: #58a6ff !important; font-family: monospace; }
+
+    /* 5. Mobile Adjustments (< 768px) */
     @media (max-width: 768px) {
-        div[data-testid="stMetricValue"] { font-size: 1.3rem !important; }
-        .stMetric label { font-size: 0.8rem !important; }
-        .disclaimer-box { font-size: 0.75rem !important; }
+        div[data-testid="stMetricValue"] { font-size: 1.25rem !important; }
+        .strike-zone-card { font-size: 0.8rem !important; }
     }
 
-    /* 6. Thesis & Visible Disclaimer Guard */
-    .thesis-box { 
-        background-color: #161b22; 
-        border-left: 4px solid #58a6ff; 
-        padding: 15px; 
-        border-radius: 0 8px 8px 0; 
-        margin-top: 15px;
-    }
-    
+    /* 6. Professional Disclaimer Guard */
     .disclaimer-box { 
         background-color: #1c1c1c !important; 
-        border: 1px solid #ff4b4b !important; 
+        border: 1px solid #ef4444 !important; 
         padding: 18px !important; 
         border-radius: 10px !important; 
-        color: #ff4b4b !important; 
+        color: #f87171 !important; 
         margin: 40px auto !important; 
         text-align: center !important;
-        font-weight: bold !important;
-        display: block !important;
+        font-weight: 600 !important;
+        max-width: 850px;
         visibility: visible !important;
-        max-width: 900px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -120,7 +116,7 @@ with tab_t:
         for i, s in enumerate(leaders):
             with cols[i]:
                 st.metric(label=s['ticker'], value=f"{curr}{s['price']:.2f}", delta=f"{s['change']:.2f}%")
-                st.markdown(f"<div class='strike-zone-card'><span style='color:#58a6ff'>Entry: {curr}{s['entry']:.2f}</span><br><span style='color:#3fb950'>Target: {curr}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='strike-zone-card'><span class='val-entry'>Entry: {curr}{s['entry']:.2f}</span><br><span class='val-target'>Target: {curr}{s['target']:.2f}</span></div>", unsafe_allow_html=True)
                 leader_ctx += f"{s['ticker']}:{s['price']}; "
         st.session_state.current_context = leader_ctx
     
@@ -136,10 +132,12 @@ with tab_t:
                 st.metric(label=search, value=f"{curr}{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
                 st.markdown(f"<div class='strike-zone-card'>Entry: {curr}{(2*piv)-hi:.2f} | Target: {curr}{(2*piv)-lo:.2f}</div>", unsafe_allow_html=True)
                 if api_key:
-                    with st.spinner("Generating Thesis..."):
+                    # 🏛️ THINKING GUARD
+                    with st.spinner(f"AI Advisor is thinking about {search}..."):
                         model = genai.GenerativeModel(get_working_model(api_key))
-                        thesis = model.generate_content(f"3-point bullish thesis for {search}").text
-                        st.markdown(f"<div class='thesis-box'><b>📈 Thesis: {search}</b><br>{thesis}</div>", unsafe_allow_html=True)
+                        thesis = model.generate_content(f"3-point investment thesis for {search}").text
+                        st.markdown(f"### 📈 Thesis: {search}")
+                        st.markdown(f"<div class='strike-zone-card'>{thesis}</div>", unsafe_allow_html=True)
         except: st.error("Ticker not found.")
 
 with tab_r:
@@ -159,24 +157,26 @@ with tab_r:
         st.session_state.messages.append({"role": "user", "content": final})
         with st.chat_message("user"): st.write(final)
         with st.chat_message("assistant"):
-            model = genai.GenerativeModel(get_working_model(api_key))
-            ans = model.generate_content(f"Context: {st.session_state.current_context}\nQuery: {final}").text
-            st.markdown(ans)
-            st.session_state.messages.append({"role": "assistant", "content": ans})
+            # 🏛️ THINKING GUARD
+            with st.spinner("Sovereign Intelligence is thinking..."):
+                model = genai.GenerativeModel(get_working_model(api_key))
+                ans = model.generate_content(f"Context: {st.session_state.current_context}\nQuery: {final}").text
+                st.markdown(ans)
+                st.session_state.messages.append({"role": "assistant", "content": ans})
 
 with tab_a:
-    st.write("### 📜 Sovereign Protocol (v62.0 Professional)")
+    st.write("### 📜 Sovereign Protocol (v64.0 Professional)")
     st.markdown("""
-    * **Contrast Shield:** Overrides mobile browser defaults to fix unreadable text.
-    * **Fluid Scaling:** Dynamic metrics for high-density mobile displays.
-    * **Billing Tier:** Optimized for professional quotas (2,000 requests per minute).
+    * **Contrast Logic:** Switched white to **Off-White (#FAFAFA)** and **Slate (#1F2937)** for mobile clarity.
+    * **Thinking Guard:** Implemented `st.spinner` for all AI interactions to provide visual feedback.
+    * **Fluid Scaling:** Adjusted metric padding and sizing for high-density mobile screens.
     """)
 
-# 🏛️ GLOBAL INSTITUTIONAL DISCLAIMER (Locked visibility outside of tabs)
+# 🏛️ GLOBAL INSTITUTIONAL DISCLAIMER
 st.markdown("""
 <div class="disclaimer-box">
     <b>⚠️ INSTITUTIONAL RISK WARNING</b><br>
-    Trading involves significant risk. You are solely responsible for all financial decisions made using this terminal. 
-    Information is for research purposes only.
+    Information is for research purposes only. 
+    Users are solely responsible for all financial decisions made using this terminal.
 </div>
 """, unsafe_allow_html=True)
