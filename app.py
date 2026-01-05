@@ -4,66 +4,52 @@ import yfinance as yf
 import requests
 import google.generativeai as genai
 
-# --- 1. ARCHITECTURAL CONFIG & CONTRAST LOCK ---
+# --- 1. ARCHITECTURAL CONFIG & THEME HARD-LOCK ---
 st.set_page_config(page_title="Sovereign Terminal", layout="wide")
 
+# CSS: Nuclear Reset
 st.markdown("""
     <style>
     header, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden !important; height: 0 !important; }
     
-    /* Global Background Fix */
-    .stApp { background-color: #FFFFFF !important; color: #1a1a1a !important; }
-    
-    /* 1. FIX: Search Bar Blackout (Resolves IMG_3196) */
-    div[data-testid="stTextInput"] input {
-        background-color: #f0f2f6 !important;
-        color: #1a1a1a !important;
-        border: 2px solid #dee2e6 !important;
-        -webkit-text-fill-color: #1a1a1a !important;
-    }
+    /* Force Light Theme Base */
+    .stApp { background-color: #FFFFFF !important; }
 
-    /* 2. FIX: Tab Label Visibility (Resolves IMG_3197) */
-    button[data-baseweb="tab"] p { 
-        color: #555555 !important; 
-        font-weight: 700 !important;
-    }
-    button[data-baseweb="tab"][aria-selected="true"] p { 
+    /* HARD-LOCK: Radio & Tab Labels (Resolves IMG_3195, 3197) */
+    div[data-testid="stWidgetLabel"] p, label p, button[data-baseweb="tab"] p { 
         color: #000000 !important; 
+        font-weight: 900 !important;
+        -webkit-text-fill-color: #000000 !important;
     }
 
-    /* 3. FIX: Radio Button Text Visibility (IMG_3195) */
-    div[data-testid="stRadio"] label p {
-        color: #1a1a1a !important;
+    /* HARD-LOCK: Search Bar Input (Resolves IMG_3196, 3201) */
+    div[data-testid="stTextInput"] input {
+        background-color: #F0F2F6 !important;
+        color: #000000 !important;
+        border: 2px solid #000000 !important;
+        -webkit-text-fill-color: #000000 !important;
         font-weight: bold !important;
-        -webkit-text-fill-color: #1a1a1a !important;
     }
 
-    /* 4. CUSTOM HARD-CODED TACTICAL CARDS (Bypasses White-on-White Bug) */
+    /* Tactical Card Container */
     .tactical-card {
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        padding: 15px;
+        background-color: #FFFFFF;
+        border: 2px solid #E6E9EF;
+        padding: 16px;
         border-radius: 12px;
-        margin-bottom: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .card-ticker { color: #1a1a1a !important; font-size: 1.2rem; font-weight: 900; margin-bottom: 2px; }
-    .card-price { color: #000000 !important; font-size: 1.6rem; font-weight: 800; }
-    .card-zone { 
-        background: #e9ecef; 
-        padding: 10px; 
-        border-radius: 6px; 
-        margin-top: 10px; 
-        font-family: monospace; 
-        color: #1a1a1a !important;
-        font-weight: bold;
+        margin-bottom: 16px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. DATA ENGINE ---
+# --- 2. GLOBAL STATE ---
+if "messages" not in st.session_state: st.session_state["messages"] = []
+if "current_context" not in st.session_state: st.session_state["current_context"] = ""
+
+# --- 3. DATA ENGINE ---
 @st.cache_data(ttl=600)
-def get_movers(universe):
+def get_market_data(universe):
     idx = 1 if "India" in universe else 0
     url = "https://en.wikipedia.org/wiki/NIFTY_50" if idx == 1 else "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     try:
@@ -82,43 +68,62 @@ def get_movers(universe):
         return pd.DataFrame(res).sort_values(by='abs', ascending=False).head(5).to_dict('records')
     except: return []
 
-# --- 3. INTERFACE ---
+# --- 4. INTERFACE ---
 st.title("🏛️ Sovereign Terminal")
+
+# Universe Control - Using Inline Labels
 exch = st.radio("Universe Selection:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
 
-t_tac, t_res, t_pro = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
+tab_t, tab_r, tab_a = st.tabs(["⚡ Tactical", "🤖 Research Desk", "📜 Protocol"])
 
-with t_tac:
-    leaders = get_movers(exch)
+with tab_t:
+    leaders = get_market_data(exch)
     curr = "₹" if "India" in exch else "$"
     if leaders:
         for s in leaders:
-            # Using Hard-Coded HTML to ensure visibility (Resolves IMG_3195/3198)
+            # NUCLEAR FIX: Forced Inline Styles for Ticker and Price
             st.markdown(f"""
             <div class="tactical-card">
-                <div class="card-ticker">{s['ticker']} {'🔥 OVERSTATED' if abs(s['change']) > 4.0 else '⚡ VOLATILE'}</div>
-                <div class="card-price">{curr}{s['price']:.2f} 
-                    <span style="color:{'#28a745' if s['change'] > 0 else '#dc3545'}; font-size:1rem;">
+                <div style="color: #000000 !important; font-size: 1.2rem; font-weight: 900; margin-bottom: 4px;">
+                    {s['ticker']} {'🔥 OVERSTATED' if abs(s['change']) > 4.0 else ''}
+                </div>
+                <div style="color: #000000 !important; font-size: 1.8rem; font-weight: 800; margin-bottom: 8px;">
+                    {curr}{s['price']:.2f} 
+                    <span style="color: {'#1D8139' if s['change'] > 0 else '#D32F2F'}; font-size: 1.1rem; font-weight: 700;">
                         ({s['change']:.2f}%)
                     </span>
                 </div>
-                <div class="card-zone">
+                <div style="background-color: #F1F3F5; border-radius: 8px; padding: 12px; color: #000000 !important; font-weight: 700; border: 1px solid #E6E9EF;">
                     Entry: {curr}{s['entry']:.2f} | Target: {curr}{s['target']:.2f}
                 </div>
             </div>
             """, unsafe_allow_html=True)
+        st.session_state["current_context"] = str(leaders)
     
     st.divider()
-    search = st.text_input("Strategic Search (Ticker):", key=f"s_{exch}").strip().upper()
+    search = st.text_input("Strategic Search (Ticker):", key=f"src_{exch}").strip().upper()
 
-with t_res:
-    st.info("Research Desk active. Context loaded from Tactical feed.")
-    # AI response logic would render here using same contrast principles
+with tab_r:
+    # HARD-CONTRAST CHAT MESSAGES
+    for m in st.session_state["messages"]:
+        bg = "#F8F9FA" if m["role"] == "assistant" else "#FFFFFF"
+        border = "#005CC5" if m["role"] == "assistant" else "#000000"
+        st.markdown(f"""
+        <div style="background-color: {bg}; border-left: 5px solid {border}; padding: 16px; margin-bottom: 12px; color: #000000 !important; font-size: 1rem;">
+            <b style="color: {border};">{m['role'].upper()}:</b> {m['content']}
+        </div>
+        """, unsafe_allow_html=True)
+    
+    if prompt := st.chat_input("Ask Terminal..."):
+        st.session_state["messages"].append({"role": "user", "content": prompt})
+        # AI logic would process here...
+        st.rerun()
 
-with t_pro:
-    st.write("### 📜 Sovereign Protocol (v84.0)")
+with tab_a:
+    st.write("### 📜 Sovereign Protocol (v85.0)")
     st.markdown("""
-    * **Hard-Contrast Lock:** Replaced `st.metric` with custom HTML cards to prevent white-on-white text bugs on mobile browsers.
-    * **Search Bar Repair:** Forced light-grey background on text inputs to fix the "Blackout" issue seen in user screenshots.
-    * **Tab Visibility:** Hard-locked tab label colors to charcoal to ensure Research/Protocol menus are visible.
+    **🏛️ Critical Visibility Fixes**
+    * **Ticker Hard-Lock:** Tickers and prices are now rendered with inline `color: #000000 !important` to stop the white-on-white bug.
+    * **Input Hard-Lock:** Search bar background and text colors are forced to high-contrast blue/black.
+    * **Chat Hard-Lock:** AI responses use standard HTML `div` containers to prevent browser "ghosting".
     """)
