@@ -62,6 +62,7 @@ def handle_ai_query(prompt, context, key):
             return "⚠️ Quota Exceeded. Please wait 60s."
 
 # --- 4. DATA ENGINE (Multi-Exchange & Full Profile) ---
+# --- 4. DATA ENGINE (Filtered for Strike Zone) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     if exchange_choice == "India (Nifty 50)":
@@ -75,8 +76,10 @@ def rank_movers(exchange_choice):
         response = requests.get(url, headers=headers)
         symbols = pd.read_html(response.text)[0]['Symbol'].tolist()
     
-    sample = symbols[::max(1, len(symbols)//60)] 
+    # Increase sample size slightly to ensure we find enough Strike Zone candidates
+    sample = symbols[::max(1, len(symbols)//80)] 
     results = []
+    
     for symbol in sample:
         try:
             t = yf.Ticker(symbol); h = t.history(period="2d")
@@ -84,15 +87,24 @@ def rank_movers(exchange_choice):
             info = t.info
             curr, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
             piv = (hi + lo + prev) / 3
-            results.append({
-                "ticker": symbol, "name": info.get('longName', symbol), 
-                "price": curr, "change": ((curr-prev)/prev)*100,
-                "entry": (2*piv)-hi, "target": (2*piv)-lo,
-                "h52": info.get('fiftyTwoWeekHigh', 0), "l52": info.get('fiftyTwoWeekLow', 0),
-                "abs_change": abs(((curr-prev)/prev)*100)
-            })
+            entry = (2*piv)-hi
+            target = (2*piv)-lo
+            
+            # --- STRIKE ZONE FILTER ---
+            # Only add to results if price is below or equal to the Target (Resistance 1)
+            if curr <= target:
+                results.append({
+                    "ticker": symbol, "name": info.get('longName', symbol), 
+                    "price": curr, "change": ((curr-prev)/prev)*100,
+                    "entry": entry, "target": target,
+                    "h52": info.get('fiftyTwoWeekHigh', 0), "l52": info.get('fiftyTwoWeekLow', 0),
+                    "abs_change": abs(((curr-prev)/prev)*100)
+                })
         except: continue
+        
     if not results: return []
+    
+    # Return top 5 most volatile stocks that PASSED the strike zone filter
     return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
 
 # --- 5. UI INTERFACE ---
