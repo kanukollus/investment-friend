@@ -92,7 +92,9 @@ def rank_movers(exchange_choice):
             
             # --- STRIKE ZONE FILTER ---
             # Only add to results if price is below or equal to the Target (Resistance 1)
-            if curr <= target:
+            # --- STRIKE ZONE FILTER (REFINED) ---
+            # Only add if: Entry <= Current Price <= Target
+            if entry <= curr <= target:
                 results.append({
                     "ticker": symbol, "name": info.get('longName', symbol), 
                     "price": curr, "change": ((curr-prev)/prev)*100,
@@ -150,6 +152,8 @@ with tab_tactical:
                 p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
                 piv = (hi + lo + prev) / 3
                 e, t = (2*piv)-hi, (2*piv)-lo
+                status_text = "✅ IN STRIKE ZONE" if in_zone else "❌ OUTSIDE RANGE"
+                status_color = "#3fb950" if in_zone else "#f85149"
                 st.metric(label=f"{query} ({q_i.get('longName', '')})", value=f"{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
                 st.markdown(f"""
                     <div class="strike-zone-card">
