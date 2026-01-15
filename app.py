@@ -63,6 +63,7 @@ def handle_ai_query(prompt, context, key):
 
 # --- 4. DATA ENGINE (Multi-Exchange & Full Profile) ---
 # --- 4. DATA ENGINE (Filtered for Strike Zone) ---
+# --- 4. DATA ENGINE (Low-Cost / High-Upside Optimization) ---
 @st.cache_data(ttl=600)
 def rank_movers(exchange_choice):
     if exchange_choice == "India (Nifty 50)":
@@ -76,8 +77,7 @@ def rank_movers(exchange_choice):
         response = requests.get(url, headers=headers)
         symbols = pd.read_html(response.text)[0]['Symbol'].tolist()
     
-    # Increase sample size slightly to ensure we find enough Strike Zone candidates
-    sample = symbols[::max(1, len(symbols)//80)] 
+    sample = symbols[::max(1, len(symbols)//120)] # Scan roughly 120 symbols
     results = []
     
     for symbol in sample:
@@ -86,62 +86,33 @@ def rank_movers(exchange_choice):
             if len(h) < 2: continue
             info = t.info
             curr, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
-            piv = (hi + lo + prev) / 3
-            entry = (2*piv)-hi
-            target = (2*piv)-lo
             
-            # --- STRIKE ZONE FILTER ---
-            # Only add to results if price is below or equal to the Target (Resistance 1)
-            # --- STRIKE ZONE FILTER (REFINED) ---
-            # Only add if: Entry <= Current Price <= Target
-            if entry <= curr <= target:
+            # Floor Trader Pivot Math
+            piv = (hi + lo + prev) / 3
+            target = (2*piv)-lo # Resistance 1
+            entry = (2*piv)-hi   # Support 1
+            
+            # THE NEW FILTERS:
+            if curr < 20: # 1. Only stocks under $20/₹20
+                upside_pct = ((target - curr) / curr) * 100
+                
                 results.append({
                     "ticker": symbol, "name": info.get('longName', symbol), 
                     "price": curr, "change": ((curr-prev)/prev)*100,
-                    "entry": entry, "target": target,
-                    "h52": info.get('fiftyTwoWeekHigh', 0), "l52": info.get('fiftyTwoWeekLow', 0),
-                    "abs_change": abs(((curr-prev)/prev)*100)
+                    "entry": entry, "target": target, "upside": upside_pct,
+                    "h52": info.get('fiftyTwoWeekHigh', 0), "l52": info.get('fiftyTwoWeekLow', 0)
                 })
         except: continue
         
     if not results: return []
     
-    # Return top 5 most volatile stocks that PASSED the strike zone filter
-    return pd.DataFrame(results).sort_values(by='abs_change', ascending=False).head(5).to_dict('records')
+    # Return top 5 stocks with the HIGHEST upside percentage
+    return pd.DataFrame(results).sort_values(by='upside', ascending=False).head(5).to_dict('records')
 
-# --- 5. UI INTERFACE ---
-st.title("🏛️ Sovereign Intelligence Terminal")
-exchange_choice = st.radio("Exchange Universe:", ["US (S&P 500)", "India (Nifty 50)"], horizontal=True)
+# --- 5. UI INTERFACE (Inside tab_tactical) ---
+# ... (Keep your tab definitions as they were) ...
 
-# THE TABS
-tab_tactical, tab_research, tab_about = st.tabs(["⚡ Tactical Terminal", "🤖 AI Research Desk", "📜 What is this app?"])
-
-with tab_tactical:
-    st.write(f"### {exchange_choice} Volatility Leaders")
-    leaders = rank_movers(exchange_choice)
-    if not leaders:
-        st.warning("No market data available. Refreshing...")
-    else:
-        leader_context = f"Leaders in {exchange_choice}: "
-        cols = st.columns(5)
-        for i, stock in enumerate(leaders):
-            with cols[i]:
-                status = "⚠️ OVEREXTENDED" if stock['price'] > stock['target'] else "✅ STRIKE ZONE"
-                curr_sym = "₹" if "India" in exchange_choice else "$"
-                st.metric(label=stock['ticker'], value=f"{curr_sym}{stock['price']:.2f}", delta=f"{stock['change']:.2f}%")
-                st.markdown(f"""
-                    <div class="strike-zone-card">
-                        <b style="color:#8b949e; font-size:0.65rem; display:block; margin-bottom:5px;">{stock['name'][:25]}</b>
-                        <b style="color:#8b949e; font-size:0.7rem;">{status}</b><br>
-                        <span class="val-entry">Entry: {stock['entry']:.2f}</span><br>
-                        <span class="val-target">Target: {stock['target']:.2f}</span><hr style="border:0.1px solid #30363d; margin:8px 0;">
-                        <span class="val-range">52W High: {stock['h52']:.2f}</span><br>
-                        <span class="val-range">52W Low: {stock['l52']:.2f}</span>
-                    </div>
-                """, unsafe_allow_html=True)
-                leader_context += f"{stock['ticker']} ({stock['name']}, ${stock['price']:.2f}); "
-        st.session_state.current_context = leader_context
-
+    # UPDATED STRATEGIC SEARCH LOGIC (FIXES IN_ZONE ERROR)
     st.divider()
     st.write("### 🔍 Strategic Asset Search")
     query = st.text_input("Deep-Dive any ticker (e.g. RELIANCE.NS, TSLA):").upper()
@@ -152,13 +123,18 @@ with tab_tactical:
                 p, prev, hi, lo = q_h['Close'].iloc[-1], q_h['Close'].iloc[-2], q_h['High'].iloc[-2], q_h['Low'].iloc[-2]
                 piv = (hi + lo + prev) / 3
                 e, t = (2*piv)-hi, (2*piv)-lo
+                
+                # Logic Fix: Define in_zone before using it
+                in_zone = e <= p <= t
                 status_text = "✅ IN STRIKE ZONE" if in_zone else "❌ OUTSIDE RANGE"
                 status_color = "#3fb950" if in_zone else "#f85149"
+                
                 st.metric(label=f"{query} ({q_i.get('longName', '')})", value=f"{p:.2f}", delta=f"{((p-prev)/prev)*100:.2f}%")
                 st.markdown(f"""
                     <div class="strike-zone-card">
-                        <span class="val-entry">Entry: ${e:.2f}</span> | <span class="val-target">Target: ${t:.2f}</span><br>
-                        <span class="val-range">52W Range: ${q_i.get('fiftyTwoWeekLow', 0):.2f} - ${q_i.get('fiftyTwoWeekHigh', 0):.2f}</span>
+                        <b style="color:{status_color}; font-size:0.8rem;">{status_text}</b><br>
+                        <span class="val-entry">Entry: {e:.2f}</span> | <span class="val-target">Target: {t:.2f}</span><br>
+                        <span class="val-range">52W Range: {q_i.get('fiftyTwoWeekLow', 0):.2f} - {q_i.get('fiftyTwoWeekHigh', 0):.2f}</span>
                     </div>
                 """, unsafe_allow_html=True)
         except: st.error("Ticker not found.")
