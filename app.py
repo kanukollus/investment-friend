@@ -104,7 +104,7 @@ with tab_tactical:
     if not leaders:
         st.warning("No assets under $40 found in this sample. Try another exchange.")
     else:
-        cols = st.columns(5)
+        cols = st.columns(10)
         for i, stock in enumerate(leaders):
             with cols[i]:
                 st.metric(label=stock['ticker'], value=f"{stock['price']:.2f}", delta=f"{stock['upside']:.1f}% Upside")
