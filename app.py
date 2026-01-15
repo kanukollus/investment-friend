@@ -64,7 +64,7 @@ def rank_movers(exchange_choice):
         url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
         symbols = pd.read_html(requests.get(url, headers={"User-Agent": "Mozilla/5.0"}).text)[0]['Symbol'].tolist()
     
-    sample = symbols[::max(1, len(symbols)//100)] 
+    sample = symbols[::max(1, len(symbols)//500)] 
     results = []
     
     for symbol in sample:
@@ -87,7 +87,7 @@ def rank_movers(exchange_choice):
         except: continue
     
     if not results: return []
-    return pd.DataFrame(results).sort_values(by='upside', ascending=False).head(5).to_dict('records')
+    return pd.DataFrame(results).sort_values(by='upside', ascending=False).head(10).to_dict('records')
 
 # --- 5. UI INTERFACE ---
 st.title("🏛️ Sovereign Intelligence Terminal")
@@ -102,7 +102,7 @@ with tab_tactical:
     
     context_text = ""
     if not leaders:
-        st.warning("No assets under $20 found in this sample. Try another exchange.")
+        st.warning("No assets under $40 found in this sample. Try another exchange.")
     else:
         cols = st.columns(5)
         for i, stock in enumerate(leaders):
