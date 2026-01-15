@@ -73,7 +73,7 @@ def rank_movers(exchange_choice):
             if len(h) < 2: continue
             curr, prev, hi, lo = h['Close'].iloc[-1], h['Close'].iloc[-2], h['High'].iloc[-2], h['Low'].iloc[-2]
             
-            if curr < 20: # YOUR FILTER
+            if curr < 40: # YOUR FILTER
                 piv = (hi + lo + prev) / 3
                 target = (2*piv)-lo
                 entry = (2*piv)-hi
@@ -97,7 +97,7 @@ exchange_choice = st.radio("Exchange Universe:", ["US (S&P 500)", "India (Nifty 
 tab_tactical, tab_research, tab_about = st.tabs(["⚡ Tactical Terminal", "🤖 AI Research Desk", "📜 What is this app?"])
 
 with tab_tactical:
-    st.write(f"### {exchange_choice} High-Upside Stocks (<$20)")
+    st.write(f"### {exchange_choice} High-Upside Stocks (<$40)")
     leaders = rank_movers(exchange_choice)
     
     context_text = ""
@@ -154,6 +154,6 @@ with tab_research:
 
 with tab_about:
     st.write("### Institutional Protocol")
-    st.info("Scanner prioritizing equities under $20 with the highest Pivot Resistance upside.")
+    st.info("Scanner prioritizing equities under $40 with the highest Pivot Resistance upside.")
 
 st.markdown('<div class="disclaimer-box"><b>⚠️ DISCLAIMER:</b> Not financial advice.</div>', unsafe_allow_html=True)
